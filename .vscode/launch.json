@@ -1,0 +1,29 @@
+﻿{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "shore-pod (Android Emulator)",
+      "request": "launch",
+      "type": "dart",
+      "flutterMode": "debug",
+      "deviceId": "emulator-5554"
+    },
+    {
+      "name": "shore-pod",
+      "request": "launch",
+      "type": "dart"
+    },
+    {
+      "name": "shore-pod (profile mode)",
+      "request": "launch",
+      "type": "dart",
+      "flutterMode": "profile"
+    },
+    {
+      "name": "shore-pod (release mode)",
+      "request": "launch",
+      "type": "dart",
+      "flutterMode": "release"
+    }
+  ]
+}

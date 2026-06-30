@@ -24,6 +24,15 @@ Future<void> main() async {
 
 final appSettingsController = AppSettingsController();
 
+List<PracticeQuestion> randomQuestionSample(
+  List<PracticeQuestion> questions,
+  int count,
+) {
+  final sampleSize = math.min(count, questions.length);
+  final shuffled = questions.toList(growable: false)..shuffle(math.Random());
+  return shuffled.take(sampleSize).toList(growable: false);
+}
+
 class AppSettingsController extends ChangeNotifier {
   AppSettings _settings = AppSettings.defaults();
 
@@ -432,28 +441,44 @@ class HomePage extends StatelessWidget {
                 label: '收藏',
                 color: AppColors.accent,
                 tint: AppColors.accentTint,
-                onTap: () => onOpen(const FavoriteItemsPage()),
+                onTap: () async {
+                  if (await ensureLoggedIn(context) && context.mounted) {
+                    onOpen(const FavoriteItemsPage());
+                  }
+                },
               ),
               HomeShortcutItem(
                 icon: Icons.sticky_note_2_rounded,
                 label: '笔记',
                 color: AppColors.amber,
                 tint: AppColors.amberTint,
-                onTap: () => onOpen(const MyNotesPage()),
+                onTap: () async {
+                  if (await ensureLoggedIn(context) && context.mounted) {
+                    onOpen(const MyNotesPage());
+                  }
+                },
               ),
               HomeShortcutItem(
                 icon: Icons.assignment_late_rounded,
                 label: '错题本',
                 color: AppColors.red,
                 tint: AppColors.redTint,
-                onTap: () => onOpen(const WrongQuestionBookPage()),
+                onTap: () async {
+                  if (await ensureLoggedIn(context) && context.mounted) {
+                    onOpen(const WrongQuestionBookPage());
+                  }
+                },
               ),
               HomeShortcutItem(
                 icon: Icons.history_rounded,
                 label: '记录',
                 color: AppColors.purple,
                 tint: AppColors.purpleTint,
-                onTap: () => onOpen(const MyExamAttemptsPage()),
+                onTap: () async {
+                  if (await ensureLoggedIn(context) && context.mounted) {
+                    onOpen(const MyExamAttemptsPage());
+                  }
+                },
               ),
             ],
           ),
@@ -1344,9 +1369,10 @@ class _PracticeHubPageState extends State<PracticeHubPage> {
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
         void openPractice({required bool memorizationMode}) {
-          final selectedQuestions = practiceQuestions
-              .take(selectedCount.round())
-              .toList(growable: false);
+          final selectedQuestions = randomQuestionSample(
+            practiceQuestions,
+            selectedCount.round(),
+          );
           Navigator.of(sheetContext).pop();
           widget.onOpen(
             PracticeExamPage(
@@ -1408,9 +1434,10 @@ class _PracticeHubPageState extends State<PracticeHubPage> {
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
         void openExam() {
-          final selectedQuestions = practiceQuestions
-              .take(selectedCount.round())
-              .toList(growable: false);
+          final selectedQuestions = randomQuestionSample(
+            practiceQuestions,
+            selectedCount.round(),
+          );
           Navigator.of(sheetContext).pop();
           widget.onOpen(AIExamPage(questions: selectedQuestions));
         }
@@ -1975,22 +2002,38 @@ class _ProfilePageState extends State<ProfilePage> {
               SettingsActionRow(
                 icon: Icons.bookmark_rounded,
                 title: '我的收藏',
-                onTap: () => widget.onOpen(const FavoriteItemsPage()),
+                onTap: () async {
+                  if (await ensureLoggedIn(context) && context.mounted) {
+                    widget.onOpen(const FavoriteItemsPage());
+                  }
+                },
               ),
               SettingsActionRow(
                 icon: Icons.sticky_note_2_rounded,
                 title: '我的笔记',
-                onTap: () => widget.onOpen(const MyNotesPage()),
+                onTap: () async {
+                  if (await ensureLoggedIn(context) && context.mounted) {
+                    widget.onOpen(const MyNotesPage());
+                  }
+                },
               ),
               SettingsActionRow(
                 icon: Icons.fact_check_rounded,
                 title: '我的试题',
-                onTap: () => widget.onOpen(const MyExamAttemptsPage()),
+                onTap: () async {
+                  if (await ensureLoggedIn(context) && context.mounted) {
+                    widget.onOpen(const MyExamAttemptsPage());
+                  }
+                },
               ),
               SettingsActionRow(
                 icon: Icons.assignment_late_rounded,
                 title: '错题本',
-                onTap: () => widget.onOpen(const WrongQuestionBookPage()),
+                onTap: () async {
+                  if (await ensureLoggedIn(context) && context.mounted) {
+                    widget.onOpen(const WrongQuestionBookPage());
+                  }
+                },
               ),
             ],
           ),
@@ -2548,9 +2591,10 @@ class _KnowledgeDetailPageState extends State<KnowledgeDetailPage> {
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
         void openPractice({required bool memorizationMode}) {
-          final selectedQuestions = questions
-              .take(selectedCount.round())
-              .toList(growable: false);
+          final selectedQuestions = randomQuestionSample(
+            questions,
+            selectedCount.round(),
+          );
           Navigator.of(sheetContext).pop();
           Navigator.of(context).push(
             MaterialPageRoute<void>(
@@ -5184,11 +5228,42 @@ class SpecialTrainingPage extends StatelessWidget {
   }
 }
 
-class WrongQuestionBookPage extends StatelessWidget {
+class WrongQuestionBookPage extends StatefulWidget {
   const WrongQuestionBookPage({super.key});
 
   @override
+  State<WrongQuestionBookPage> createState() => _WrongQuestionBookPageState();
+}
+
+class _WrongQuestionBookPageState extends State<WrongQuestionBookPage> {
+  var _allowed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _ensureAccess());
+  }
+
+  Future<void> _ensureAccess() async {
+    final loggedIn = await ensureLoggedIn(context);
+    if (!mounted) {
+      return;
+    }
+    if (!loggedIn) {
+      Navigator.of(context).maybePop();
+      return;
+    }
+    setState(() => _allowed = true);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (!_allowed) {
+      return const DetailScaffold(
+        title: '错题本',
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
     final wrongQuestions = practiceQuestions.take(3).toList(growable: false);
 
     return DetailScaffold(
@@ -5268,10 +5343,12 @@ class _FavoriteItemsPageState extends State<FavoriteItemsPage> {
     if (!mounted) {
       return;
     }
+    if (!loggedIn) {
+      Navigator.of(context).maybePop();
+      return;
+    }
     setState(() {
-      _future = loggedIn
-          ? LocalSqliteStore.instance.favoriteItemRows()
-          : Future.value(const <Map<String, Object?>>[]);
+      _future = LocalSqliteStore.instance.favoriteItemRows();
     });
   }
 
@@ -5351,10 +5428,12 @@ class _MyNotesPageState extends State<MyNotesPage> {
     if (!mounted) {
       return;
     }
+    if (!loggedIn) {
+      Navigator.of(context).maybePop();
+      return;
+    }
     setState(() {
-      _future = loggedIn
-          ? LocalSqliteStore.instance.userNoteRows()
-          : Future.value(const <Map<String, Object?>>[]);
+      _future = LocalSqliteStore.instance.userNoteRows();
     });
   }
 
@@ -5698,10 +5777,12 @@ class _MyExamAttemptsPageState extends State<MyExamAttemptsPage> {
     if (!mounted) {
       return;
     }
+    if (!loggedIn) {
+      Navigator.of(context).maybePop();
+      return;
+    }
     setState(() {
-      _future = loggedIn
-          ? LocalSqliteStore.instance.practiceAttemptRecords()
-          : Future.value(const <Map<String, Object?>>[]);
+      _future = LocalSqliteStore.instance.practiceAttemptRecords();
     });
   }
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import datetime as dt
+import hashlib
 import json
 import re
 import uuid
@@ -131,20 +132,46 @@ def distractor_years(year):
     return [f"{prefix}{value}年" if prefix else f"{value}年" for value in values]
 
 
+def shuffle_question_options(question, seed):
+    labels = ["A", "B", "C", "D"]
+    options = [question[f"option_{label.lower()}"] for label in labels]
+    correct = question["answer_key"].upper()
+    order = list(range(4))
+    digest = hashlib.sha256(seed.encode("utf-8")).digest()
+    for index in range(3, 0, -1):
+        swap_index = digest[3 - index] % (index + 1)
+        order[index], order[swap_index] = order[swap_index], order[index]
+    shuffled = [options[index] for index in order]
+    correct_index = order.index(labels.index(correct))
+    for label, value in zip(labels, shuffled):
+        question[f"option_{label.lower()}"] = value
+    question["answer_key"] = labels[correct_index]
+    return question
+
+
+def generic_distractors(content):
+    return [
+        f"{content}混淆了同专题相近知识点的对象或范围",
+        f"{content}把材料中的时间、地点或条件对应错误",
+        f"{content}误用相近概念的作用、结论或适用场景",
+    ]
+
+
 def build_questions(candidate, content, details):
     answer_sentence = sentence_for_answer(details, content)
+    distractors = generic_distractors(content)
     questions = [
         {
             "question_text": f"下列关于“{content}”的说法，正确的是？",
             "option_a": trim_to(answer_sentence, 60),
-            "option_b": "该说法与原始资料中的表述不符",
-            "option_c": "该考点主要属于现代科技常识",
-            "option_d": "该内容与中国古代史无关",
+            "option_b": trim_to(distractors[0], 60),
+            "option_c": trim_to(distractors[1], 60),
+            "option_d": trim_to(distractors[2], 60),
             "answer_key": "A",
             "explanation": trim_to(answer_sentence, 90),
         }
     ]
-    year = first_year(details)
+    year = first_year(answer_sentence)
     if year:
         b, c, d = distractor_years(year)
         questions.append(
@@ -158,7 +185,10 @@ def build_questions(candidate, content, details):
                 "explanation": f"材料中与该考点直接相关的时间为{year}。",
             }
         )
-    return questions[:2]
+    return [
+        shuffle_question_options(question, f"{candidate['id']}:{index}")
+        for index, question in enumerate(questions[:2])
+    ]
 
 
 def upsert(rows, key, row):

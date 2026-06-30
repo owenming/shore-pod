@@ -175,6 +175,22 @@ def command_validate(args):
             for key in required:
                 if not question.get(key):
                     errors.append(f"{item_index}.{question_index}: 缺少 {key}")
+            option_values = [
+                str(question.get("option_a", "")),
+                str(question.get("option_b", "")),
+                str(question.get("option_c", "")),
+                str(question.get("option_d", "")),
+            ]
+            for option_index, option in enumerate(option_values):
+                if is_lazy_option(option):
+                    label = ["A", "B", "C", "D"][option_index]
+                    errors.append(
+                        f"{item_index}.{question_index}: 选项 {label} 像 AI 兜底废选项：{option}"
+                    )
+            if is_lazy_explanation(str(question.get("explanation", "")), option_values):
+                errors.append(
+                    f"{item_index}.{question_index}: explanation 过于机械，不能只复制选项"
+                )
     if errors:
         print("\n".join(errors))
         sys.exit(1)
@@ -221,6 +237,32 @@ def command_validate_seed(args):
 
 def visible_len(text):
     return len("".join(str(text).split()))
+
+
+def is_lazy_option(text):
+    lazy_patterns = [
+        "原始资料",
+        "与本题无关",
+        "与材料无关",
+        "与题干无关",
+        "该考点主要属于",
+        "不需要区分",
+        "只需记住名称",
+        "具体内容在考试中通常不作区分",
+        "以上都不对",
+        "以上都正确",
+    ]
+    return any(pattern in text for pattern in lazy_patterns)
+
+
+def is_lazy_explanation(explanation, options):
+    normalized = "".join(explanation.split())
+    if not normalized:
+        return True
+    option_texts = {"".join(str(option).split()) for option in options}
+    if normalized in option_texts:
+        return True
+    return visible_len(explanation) < 12
 
 
 def add_common(parser):
