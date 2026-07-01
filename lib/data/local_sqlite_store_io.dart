@@ -171,6 +171,62 @@ class LocalSqliteStore {
     };
   }
 
+  Future<Map<String, List<Map<String, Object?>>>>
+  aptitudeCatalogTables() async {
+    await bootstrap();
+    final db = _database;
+    if (db == null) {
+      return const {};
+    }
+
+    final categoryCount =
+        Sqflite.firstIntValue(
+          await db.rawQuery('SELECT COUNT(*) FROM aptitude_category'),
+        ) ??
+        0;
+    final subcategoryCount =
+        Sqflite.firstIntValue(
+          await db.rawQuery('SELECT COUNT(*) FROM aptitude_subcategory'),
+        ) ??
+        0;
+    final questionCount =
+        Sqflite.firstIntValue(
+          await db.rawQuery('SELECT COUNT(*) FROM aptitude_question'),
+        ) ??
+        0;
+    final seedTables = await _loadBundledSeedTables();
+    final bundledCategoryCount = seedTables['aptitude_category']?.length ?? 0;
+    final bundledSubcategoryCount =
+        seedTables['aptitude_subcategory']?.length ?? 0;
+    final bundledQuestionCount = seedTables['aptitude_question']?.length ?? 0;
+    if (categoryCount < bundledCategoryCount ||
+        subcategoryCount < bundledSubcategoryCount ||
+        questionCount < bundledQuestionCount) {
+      await _seedAgentChineseCatalog(db);
+    }
+
+    return _aptitudeCatalogTablesFromDb(db);
+  }
+
+  Future<Map<String, List<Map<String, Object?>>>> _aptitudeCatalogTablesFromDb(
+    Database db,
+  ) async {
+    return {
+      'aptitude_category': await db.query(
+        'aptitude_category',
+        orderBy: 'sort_order ASC, id ASC',
+      ),
+      'aptitude_subcategory': await db.query(
+        'aptitude_subcategory',
+        orderBy: 'category_id ASC, sort_order ASC, id ASC',
+      ),
+      'aptitude_question': await db.query(
+        'aptitude_question',
+        orderBy: 'subcategory_id ASC, question_number ASC, id ASC',
+      ),
+    };
+  }
+
   Future<Map<String, String>> cardNotesForTopic(String topicId) async {
     await bootstrap();
     final db = _database;
@@ -845,6 +901,10 @@ class LocalSqliteStore {
         option_b TEXT NOT NULL,
         option_c TEXT NOT NULL,
         option_d TEXT NOT NULL,
+        option_a_image TEXT NOT NULL DEFAULT '',
+        option_b_image TEXT NOT NULL DEFAULT '',
+        option_c_image TEXT NOT NULL DEFAULT '',
+        option_d_image TEXT NOT NULL DEFAULT '',
         answer_key TEXT NOT NULL,
         explanation TEXT NOT NULL DEFAULT '',
         difficulty INTEGER NOT NULL DEFAULT 2,
@@ -867,6 +927,83 @@ class LocalSqliteStore {
         update_time INTEGER NOT NULL
       )
     ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS aptitude_category (
+        id TEXT PRIMARY KEY,
+        category_title TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        category_status INTEGER NOT NULL DEFAULT 0,
+        created_time TEXT DEFAULT CURRENT_TIMESTAMP,
+        update_time TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS aptitude_subcategory (
+        id TEXT PRIMARY KEY,
+        category_id TEXT NOT NULL,
+        subcategory_title TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        subcategory_status INTEGER NOT NULL DEFAULT 0,
+        created_time TEXT DEFAULT CURRENT_TIMESTAMP,
+        update_time TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(category_id) REFERENCES aptitude_category(id)
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS aptitude_question (
+        id TEXT PRIMARY KEY,
+        category_id TEXT NOT NULL,
+        subcategory_id TEXT NOT NULL,
+        question_number INTEGER NOT NULL,
+        question_type TEXT NOT NULL DEFAULT 'single_choice',
+        question_text TEXT NOT NULL,
+        question_image TEXT NOT NULL DEFAULT '',
+        option_a TEXT NOT NULL,
+        option_b TEXT NOT NULL,
+        option_c TEXT NOT NULL,
+        option_d TEXT NOT NULL,
+        answer_key TEXT NOT NULL,
+        explanation TEXT NOT NULL DEFAULT '',
+        difficulty INTEGER NOT NULL DEFAULT 2,
+        question_status INTEGER NOT NULL DEFAULT 0,
+        source_name TEXT NOT NULL DEFAULT '',
+        source_page INTEGER,
+        created_time TEXT DEFAULT CURRENT_TIMESTAMP,
+        update_time TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(category_id) REFERENCES aptitude_category(id),
+        FOREIGN KEY(subcategory_id) REFERENCES aptitude_subcategory(id)
+      )
+    ''');
+    await _ensureColumn(
+      db,
+      'aptitude_question',
+      'question_image',
+      "TEXT NOT NULL DEFAULT ''",
+    );
+    await _ensureColumn(
+      db,
+      'aptitude_question',
+      'option_a_image',
+      "TEXT NOT NULL DEFAULT ''",
+    );
+    await _ensureColumn(
+      db,
+      'aptitude_question',
+      'option_b_image',
+      "TEXT NOT NULL DEFAULT ''",
+    );
+    await _ensureColumn(
+      db,
+      'aptitude_question',
+      'option_c_image',
+      "TEXT NOT NULL DEFAULT ''",
+    );
+    await _ensureColumn(
+      db,
+      'aptitude_question',
+      'option_d_image',
+      "TEXT NOT NULL DEFAULT ''",
+    );
     await db.execute('''
       CREATE TABLE IF NOT EXISTS user_wrong_question (
         id TEXT PRIMARY KEY,
@@ -951,6 +1088,15 @@ class LocalSqliteStore {
       'CREATE INDEX IF NOT EXISTS idx_basic_knowledge_question_segment ON basic_knowledge_question(knowledge_segment_id)',
     );
     await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_aptitude_category_order ON aptitude_category(sort_order)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_aptitude_subcategory_category ON aptitude_subcategory(category_id, sort_order)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_aptitude_question_subcategory ON aptitude_question(subcategory_id, question_number)',
+    );
+    await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_user_basic_knowledge_progress ON user_basic_knowledge_info(user_id, basic_knowledge_id, proficient_type)',
     );
     await db.execute(
@@ -972,6 +1118,9 @@ class LocalSqliteStore {
     final segmentRows = seedTables['basic_knowledge_segment']!;
     final questionRows = seedTables['basic_knowledge_question']!;
     final currentPoliticsRows = seedTables['basic_current_politics_info']!;
+    final aptitudeCategoryRows = seedTables['aptitude_category']!;
+    final aptitudeSubcategoryRows = seedTables['aptitude_subcategory']!;
+    final aptitudeQuestionRows = seedTables['aptitude_question']!;
     final batch = db.batch();
 
     for (final category in categoryRows) {
@@ -1021,6 +1170,10 @@ class LocalSqliteStore {
         'option_b': question['option_b'],
         'option_c': question['option_c'],
         'option_d': question['option_d'],
+        'option_a_image': question['option_a_image'] ?? '',
+        'option_b_image': question['option_b_image'] ?? '',
+        'option_c_image': question['option_c_image'] ?? '',
+        'option_d_image': question['option_d_image'] ?? '',
         'answer_key': question['answer_key'],
         'explanation': question['explanation'] ?? '',
         'difficulty': question['difficulty'] ?? 2,
@@ -1028,6 +1181,57 @@ class LocalSqliteStore {
         'created_time': question['created_time'] ?? now,
         'update_time': question['update_time'] ?? now,
       }, conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
+
+    for (final category in aptitudeCategoryRows) {
+      batch.insert('aptitude_category', {
+        'id': category['id'],
+        'category_title': category['category_title'],
+        'sort_order': category['sort_order'] ?? 0,
+        'category_status': category['category_status'] ?? 0,
+        'created_time': category['created_time'],
+        'update_time': category['update_time'],
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+
+    for (final subcategory in aptitudeSubcategoryRows) {
+      batch.insert('aptitude_subcategory', {
+        'id': subcategory['id'],
+        'category_id': subcategory['category_id'],
+        'subcategory_title': subcategory['subcategory_title'],
+        'sort_order': subcategory['sort_order'] ?? 0,
+        'subcategory_status': subcategory['subcategory_status'] ?? 0,
+        'created_time': subcategory['created_time'],
+        'update_time': subcategory['update_time'],
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+
+    for (final question in aptitudeQuestionRows) {
+      batch.insert('aptitude_question', {
+        'id': question['id'],
+        'category_id': question['category_id'],
+        'subcategory_id': question['subcategory_id'],
+        'question_number': question['question_number'],
+        'question_type': question['question_type'] ?? 'single_choice',
+        'question_text': question['question_text'],
+        'question_image': question['question_image'] ?? '',
+        'option_a': question['option_a'],
+        'option_b': question['option_b'],
+        'option_c': question['option_c'],
+        'option_d': question['option_d'],
+        'option_a_image': question['option_a_image'] ?? '',
+        'option_b_image': question['option_b_image'] ?? '',
+        'option_c_image': question['option_c_image'] ?? '',
+        'option_d_image': question['option_d_image'] ?? '',
+        'answer_key': question['answer_key'],
+        'explanation': question['explanation'] ?? '',
+        'difficulty': question['difficulty'] ?? 2,
+        'question_status': question['question_status'] ?? 0,
+        'source_name': question['source_name'] ?? '',
+        'source_page': question['source_page'],
+        'created_time': question['created_time'],
+        'update_time': question['update_time'],
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
     }
 
     final realInfoIdByTitle = <String, String>{
@@ -1126,6 +1330,9 @@ class LocalSqliteStore {
         'basic_current_politics_info': _tableRows(
           tables['basic_current_politics_info'],
         ),
+        'aptitude_category': _tableRows(tables['aptitude_category']),
+        'aptitude_subcategory': _tableRows(tables['aptitude_subcategory']),
+        'aptitude_question': _tableRows(tables['aptitude_question']),
       };
     } catch (_) {
       return {
@@ -1134,6 +1341,9 @@ class LocalSqliteStore {
         'basic_knowledge_segment': const <Map<String, Object?>>[],
         'basic_knowledge_question': const <Map<String, Object?>>[],
         'basic_current_politics_info': const <Map<String, Object?>>[],
+        'aptitude_category': const <Map<String, Object?>>[],
+        'aptitude_subcategory': const <Map<String, Object?>>[],
+        'aptitude_question': const <Map<String, Object?>>[],
       };
     }
   }
@@ -1411,6 +1621,7 @@ class AppSettings {
     required this.soundEnabled,
     required this.hapticEnabled,
     required this.lastDataCheckTime,
+    required this.latestAptitudeCategoryId,
   });
 
   factory AppSettings.defaults() {
@@ -1420,6 +1631,7 @@ class AppSettings {
       soundEnabled: true,
       hapticEnabled: true,
       lastDataCheckTime: 0,
+      latestAptitudeCategoryId: '',
     );
   }
 
@@ -1433,6 +1645,9 @@ class AppSettings {
       lastDataCheckTime:
           int.tryParse(values['last_data_check_time'] ?? '') ??
           defaults.lastDataCheckTime,
+      latestAptitudeCategoryId:
+          values['latest_aptitude_category_id'] ??
+          defaults.latestAptitudeCategoryId,
     );
   }
 
@@ -1441,6 +1656,7 @@ class AppSettings {
   final bool soundEnabled;
   final bool hapticEnabled;
   final int lastDataCheckTime;
+  final String latestAptitudeCategoryId;
 
   Map<String, String> toValues() {
     return {
@@ -1449,6 +1665,7 @@ class AppSettings {
       'sound_enabled': soundEnabled ? '1' : '0',
       'haptic_enabled': hapticEnabled ? '1' : '0',
       'last_data_check_time': '$lastDataCheckTime',
+      'latest_aptitude_category_id': latestAptitudeCategoryId,
     };
   }
 
@@ -1458,6 +1675,7 @@ class AppSettings {
     bool? soundEnabled,
     bool? hapticEnabled,
     int? lastDataCheckTime,
+    String? latestAptitudeCategoryId,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -1465,6 +1683,8 @@ class AppSettings {
       soundEnabled: soundEnabled ?? this.soundEnabled,
       hapticEnabled: hapticEnabled ?? this.hapticEnabled,
       lastDataCheckTime: lastDataCheckTime ?? this.lastDataCheckTime,
+      latestAptitudeCategoryId:
+          latestAptitudeCategoryId ?? this.latestAptitudeCategoryId,
     );
   }
 }

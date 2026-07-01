@@ -63,6 +63,14 @@ flutter:
   assets:
     - assets/data/shore_pod_seed.json
     - assets/images/app_icon.png
+    - assets/images/aptitude/definition_judgment/
+    - assets/images/aptitude/science_reasoning/
+    - assets/images/aptitude/text_fallback/
+    - assets/images/aptitude/graphic_reasoning/
+    - assets/images/aptitude/quantitative_reasoning/math_operations/
+    - assets/images/aptitude/quantitative_reasoning/number_reasoning/
+    - assets/images/aptitude/data_analysis/part_1/
+    - assets/images/aptitude/data_analysis/part_2/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

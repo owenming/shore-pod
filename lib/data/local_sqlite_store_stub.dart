@@ -1,3 +1,7 @@
+import 'dart:convert';
+
+import 'package:flutter/services.dart';
+
 class LocalSqliteStore {
   LocalSqliteStore._();
 
@@ -15,6 +19,34 @@ class LocalSqliteStore {
   Future<Map<String, List<Map<String, Object?>>>>
   knowledgeCatalogTables() async {
     return const {};
+  }
+
+  Future<Map<String, List<Map<String, Object?>>>>
+  aptitudeCatalogTables() async {
+    try {
+      final raw = await rootBundle.loadString(
+        'assets/data/shore_pod_seed.json',
+      );
+      final decoded = jsonDecode(raw) as Map<String, Object?>;
+      final tables = decoded['tables'] as Map<String, Object?>;
+      return {
+        'aptitude_category': _tableRows(tables['aptitude_category']),
+        'aptitude_subcategory': _tableRows(tables['aptitude_subcategory']),
+        'aptitude_question': _tableRows(tables['aptitude_question']),
+      };
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  List<Map<String, Object?>> _tableRows(Object? value) {
+    if (value is! List) {
+      return const <Map<String, Object?>>[];
+    }
+    return value
+        .whereType<Map>()
+        .map((row) => Map<String, Object?>.from(row))
+        .toList(growable: false);
   }
 
   Future<Map<String, String>> cardNotesForTopic(String topicId) async {
@@ -284,6 +316,7 @@ class AppSettings {
     required this.soundEnabled,
     required this.hapticEnabled,
     required this.lastDataCheckTime,
+    required this.latestAptitudeCategoryId,
   });
 
   factory AppSettings.defaults() {
@@ -293,6 +326,7 @@ class AppSettings {
       soundEnabled: true,
       hapticEnabled: true,
       lastDataCheckTime: 0,
+      latestAptitudeCategoryId: '',
     );
   }
 
@@ -301,6 +335,7 @@ class AppSettings {
   final bool soundEnabled;
   final bool hapticEnabled;
   final int lastDataCheckTime;
+  final String latestAptitudeCategoryId;
 
   AppSettings copyWith({
     String? themeMode,
@@ -308,6 +343,7 @@ class AppSettings {
     bool? soundEnabled,
     bool? hapticEnabled,
     int? lastDataCheckTime,
+    String? latestAptitudeCategoryId,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -315,6 +351,8 @@ class AppSettings {
       soundEnabled: soundEnabled ?? this.soundEnabled,
       hapticEnabled: hapticEnabled ?? this.hapticEnabled,
       lastDataCheckTime: lastDataCheckTime ?? this.lastDataCheckTime,
+      latestAptitudeCategoryId:
+          latestAptitudeCategoryId ?? this.latestAptitudeCategoryId,
     );
   }
 }

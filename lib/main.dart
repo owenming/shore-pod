@@ -329,6 +329,7 @@ class _ShorePodShellState extends State<ShorePodShell> {
         onSwitchTab: (index) => setState(() => _tab = index),
       ),
       StudyPage(onOpen: _open),
+      const AptitudeTabPage(),
       ProfilePage(onOpen: _open),
     ];
 
@@ -370,6 +371,11 @@ class _ShorePodShellState extends State<ShorePodShell> {
                     label: '常识',
                   ),
                   NavigationDestination(
+                    icon: Icon(Icons.fact_check_outlined),
+                    selectedIcon: Icon(Icons.fact_check_rounded),
+                    label: '行测',
+                  ),
+                  NavigationDestination(
                     icon: Icon(Icons.person_outline_rounded),
                     selectedIcon: Icon(Icons.person_rounded),
                     label: '我的',
@@ -395,6 +401,7 @@ class HomePage extends StatelessWidget {
     return AppScaffold(
       title: '上岸舱',
       titleWidget: const HomeBrandHeader(),
+      backgroundColor: AppColors.homeBackground,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -428,13 +435,6 @@ class HomePage extends StatelessWidget {
                 color: AppColors.amber,
                 tint: AppColors.amberTint,
                 onTap: () => onOpen(PracticeHubPage(onOpen: onOpen)),
-              ),
-              HomeShortcutItem(
-                icon: Icons.fact_check_rounded,
-                label: '行测',
-                color: AppColors.blue,
-                tint: AppColors.blueTint,
-                onTap: () => onOpen(const AptitudePlaceholderPage()),
               ),
               HomeShortcutItem(
                 icon: Icons.bookmark_rounded,
@@ -488,6 +488,8 @@ class HomePage extends StatelessWidget {
               _openRecentKnowledgeCards(context);
             },
           ),
+          const SizedBox(height: 24),
+          HomeAptitudePracticeSection(onOpen: onOpen),
         ],
       ),
     );
@@ -521,6 +523,377 @@ class HomePage extends StatelessWidget {
       }
     }
     return null;
+  }
+}
+
+class HomeAptitudePracticeSection extends StatefulWidget {
+  const HomeAptitudePracticeSection({super.key, required this.onOpen});
+
+  final ValueChanged<Widget> onOpen;
+
+  @override
+  State<HomeAptitudePracticeSection> createState() =>
+      _HomeAptitudePracticeSectionState();
+}
+
+class _HomeAptitudePracticeSectionState
+    extends State<HomeAptitudePracticeSection> {
+  final Set<String> _expandedCategoryIds = <String>{};
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<AptitudeCatalog>(
+      future: loadBundledAptitudeCatalog(),
+      initialData: _bundledAptitudeCatalog,
+      builder: (context, snapshot) {
+        final catalog = snapshot.data;
+        final loading = snapshot.connectionState != ConnectionState.done;
+        if (loading && catalog == null) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 18),
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+        if (catalog == null || catalog.categories.isEmpty) {
+          return const EmptyState(message: '暂无行测类目');
+        }
+        final latestCategoryId =
+            appSettingsController.settings.latestAptitudeCategoryId;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text(
+                  '专项',
+                  style: TextStyle(
+                    color: AppColors.ink,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 1,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFF4B45),
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                  child: const Text(
+                    '练习',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      height: 1.1,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: () => widget.onOpen(const AptitudeCategoryPage()),
+                  icon: const Icon(Icons.tune_rounded, size: 14),
+                  label: const Text('自定义刷题'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.ink,
+                    backgroundColor: const Color(0xFFF5F6FA),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 5,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            for (final category in catalog.categories) ...[
+              HomeAptitudeCategoryRow(
+                category: category,
+                expanded: _expandedCategoryIds.contains(category.id),
+                current: latestCategoryId == category.id,
+                onToggle: () => _toggleCategory(category.id),
+                onOpen: () => _openFirstSubcategory(context, catalog, category),
+                onContinue: () =>
+                    _openFirstSubcategory(context, catalog, category),
+              ),
+              if (_expandedCategoryIds.contains(category.id)) ...[
+                const SizedBox(height: 3),
+                for (final subcategory in category.subcategories) ...[
+                  HomeAptitudeSubcategoryRow(
+                    subcategory: subcategory,
+                    onTap: () =>
+                        _openSubcategory(catalog, category.id, subcategory),
+                  ),
+                  const SizedBox(height: 4),
+                ],
+              ],
+              const SizedBox(height: 1),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  void _toggleCategory(String categoryId) {
+    setState(() {
+      if (!_expandedCategoryIds.remove(categoryId)) {
+        _expandedCategoryIds.add(categoryId);
+      }
+    });
+  }
+
+  void _openSubcategory(
+    AptitudeCatalog catalog,
+    String categoryId,
+    AptitudeSubcategoryEntry subcategory,
+  ) async {
+    await _rememberLatestCategory(categoryId);
+    if (!mounted) {
+      return;
+    }
+    widget.onOpen(
+      AptitudeQuestionDeckPage(
+        title: subcategory.title,
+        questions: catalog.questionsForSubcategory(subcategory.id),
+      ),
+    );
+  }
+
+  Future<void> _rememberLatestCategory(String categoryId) async {
+    final settings = appSettingsController.settings;
+    if (settings.latestAptitudeCategoryId == categoryId) {
+      return;
+    }
+    await appSettingsController.update(
+      settings.copyWith(latestAptitudeCategoryId: categoryId),
+    );
+  }
+
+  void _openFirstSubcategory(
+    BuildContext context,
+    AptitudeCatalog catalog,
+    AptitudeCategoryEntry category,
+  ) {
+    if (category.subcategories.isEmpty) {
+      showToast(context, '这个类目还没有子类目');
+      return;
+    }
+    final subcategory = category.subcategories.firstWhere(
+      (entry) => entry.questionCount > 0,
+      orElse: () => category.subcategories.first,
+    );
+    _openSubcategory(catalog, category.id, subcategory);
+  }
+}
+
+class HomeAptitudeCategoryRow extends StatelessWidget {
+  const HomeAptitudeCategoryRow({
+    super.key,
+    required this.category,
+    required this.expanded,
+    required this.current,
+    required this.onToggle,
+    required this.onOpen,
+    required this.onContinue,
+  });
+
+  final AptitudeCategoryEntry category;
+  final bool expanded;
+  final bool current;
+  final VoidCallback onToggle;
+  final VoidCallback onOpen;
+  final VoidCallback onContinue;
+
+  @override
+  Widget build(BuildContext context) {
+    final showContinue = current;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(999),
+            onTap: onToggle,
+            child: Container(
+              width: 16,
+              height: 16,
+              decoration: const BoxDecoration(
+                color: Color(0xFFFF4B45),
+                shape: BoxShape.circle,
+              ),
+              child: AnimatedRotation(
+                turns: expanded ? 0.5 : 0,
+                duration: const Duration(milliseconds: 160),
+                child: const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color: Colors.white,
+                  size: 13,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: onToggle,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    category.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.ink,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      height: 1.1,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '刷题量：0/${category.questionCount}    正确率：0%',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF8A97AF),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (showContinue) ...[
+            TextButton(
+              onPressed: onContinue,
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFFFF4B45),
+                backgroundColor: const Color(0xFFFFEAEA),
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              child: const Text('继续做题'),
+            ),
+            const SizedBox(width: 5),
+          ],
+          IconButton(
+            onPressed: onOpen,
+            icon: const Icon(Icons.chevron_right_rounded),
+            iconSize: 17,
+            color: const Color(0xFF9AA3B2),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+            style: IconButton.styleFrom(
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class HomeAptitudeSubcategoryRow extends StatelessWidget {
+  const HomeAptitudeSubcategoryRow({
+    super.key,
+    required this.subcategory,
+    required this.onTap,
+  });
+
+  final AptitudeSubcategoryEntry subcategory;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(5),
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(left: 26),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF6F7FA),
+          borderRadius: BorderRadius.circular(5),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 16,
+              height: 16,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFF8A97AF), width: 1.2),
+              ),
+              child: const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: Color(0xFF8A97AF),
+                size: 12,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    subcategory.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.ink,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                      height: 1.1,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '刷题量：0/${subcategory.questionCount}    正确率：0%',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF8A97AF),
+                      fontSize: 9,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: Color(0xFF9AA3B2),
+              size: 17,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -1070,9 +1443,6 @@ class _StudyPageState extends State<StudyPage> {
 
   @override
   Widget build(BuildContext context) {
-    final selectedCategory = syncedKnowledgeCategories.firstWhere(
-      (category) => category.id == _categoryId,
-    );
     final selectedTopics = topicsForCategory(_categoryId);
     final source = _query.trim().isEmpty
         ? selectedTopics
@@ -1139,9 +1509,6 @@ class _StudyPageState extends State<StudyPage> {
             categories: syncedKnowledgeCategories,
             selectedId: _categoryId,
             headerTitle: _query.trim().isEmpty ? '专题' : '搜索结果',
-            headerMeta: _query.trim().isEmpty
-                ? '${selectedCategory.title} · ${source.length} 个'
-                : '${source.length} 个专题',
             topics: source,
             onSelected: (id) => setState(() {
               _categoryId = id;
@@ -1187,7 +1554,6 @@ class StudyCategoryTopicLayout extends StatelessWidget {
     required this.categories,
     required this.selectedId,
     required this.headerTitle,
-    required this.headerMeta,
     required this.topics,
     required this.onSelected,
     required this.onTopicTap,
@@ -1196,7 +1562,6 @@ class StudyCategoryTopicLayout extends StatelessWidget {
   final List<KnowledgeCategory> categories;
   final String selectedId;
   final String headerTitle;
-  final String headerMeta;
   final List<KnowledgeTopic> topics;
   final ValueChanged<String> onSelected;
   final ValueChanged<KnowledgeTopic> onTopicTap;
@@ -1219,7 +1584,7 @@ class StudyCategoryTopicLayout extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SectionHeader(title: headerTitle, meta: headerMeta),
+              SectionTitle(headerTitle),
               const SizedBox(height: 10),
               if (topics.isEmpty)
                 const EmptyState(message: '没有匹配的专题')
@@ -1309,7 +1674,7 @@ class KnowledgeCategoryRailItem extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                category.title,
+                _aptitudeCategoryDisplayTitle(category.title),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -1336,20 +1701,57 @@ class PracticeHubPage extends StatefulWidget {
   State<PracticeHubPage> createState() => _PracticeHubPageState();
 }
 
+enum PracticeSubject { knowledge, aptitude }
+
 class _PracticeHubPageState extends State<PracticeHubPage> {
+  var _subject = PracticeSubject.knowledge;
+
   @override
   Widget build(BuildContext context) {
-    final total = practiceQuestions.length;
-
     return DetailScaffold(
       title: 'AI演练',
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: PracticeGatewayCard(
-          totalQuestions: total,
-          onPracticeTap: _showPracticeModeSheet,
-          onAiExamTap: _showAiExamSheet,
-        ),
+      child: FutureBuilder<AptitudeCatalog>(
+        future: loadBundledAptitudeCatalog(),
+        initialData: _bundledAptitudeCatalog,
+        builder: (context, snapshot) {
+          final aptitudeQuestions =
+              snapshot.data?.questions ?? const <AptitudeQuestion>[];
+          final total = _subject == PracticeSubject.knowledge
+              ? practiceQuestions.length
+              : aptitudeQuestions.length;
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              PracticeSubjectTabs(
+                selected: _subject,
+                onSelected: (subject) => setState(() => _subject = subject),
+              ),
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.topCenter,
+                child: PracticeGatewayCard(
+                  subject: _subject,
+                  totalQuestions: total,
+                  onPracticeTap: () {
+                    if (_subject == PracticeSubject.knowledge) {
+                      _showPracticeModeSheet();
+                      return;
+                    }
+                    widget.onOpen(const AptitudeCategoryPage());
+                  },
+                  onAiExamTap: () {
+                    if (_subject == PracticeSubject.knowledge) {
+                      _showAiExamSheet();
+                      return;
+                    }
+                    _showAptitudeAiExamSheet(aptitudeQuestions);
+                  },
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -1393,24 +1795,9 @@ class _PracticeHubPageState extends State<PracticeHubPage> {
               maxCount: maxCount,
               value: selectedCount,
               onChanged: (value) => setDialogState(() => selectedCount = value),
-              footer: Row(
-                children: [
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: () => openPractice(memorizationMode: false),
-                      icon: const Icon(Icons.flash_on_rounded),
-                      label: const Text('刷题模式'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => openPractice(memorizationMode: true),
-                      icon: const Icon(Icons.visibility_rounded),
-                      label: const Text('背题模式'),
-                    ),
-                  ),
-                ],
+              footer: QuestionModeActionRow(
+                onPractice: () => openPractice(memorizationMode: false),
+                onMemorize: () => openPractice(memorizationMode: true),
               ),
             );
           },
@@ -1451,10 +1838,61 @@ class _PracticeHubPageState extends State<PracticeHubPage> {
               maxCount: maxCount,
               value: selectedCount,
               onChanged: (value) => setDialogState(() => selectedCount = value),
-              footer: FilledButton.icon(
+              footer: QuestionSheetPrimaryAction(
                 onPressed: openExam,
                 icon: const Icon(Icons.bolt_rounded),
-                label: const Text('开始 AI真题演练'),
+                label: '开始演练',
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showAptitudeAiExamSheet(
+    List<AptitudeQuestion> questions,
+  ) async {
+    final availableCount = questions.length;
+    if (availableCount == 0) {
+      showToast(context, '暂无可练题目');
+      return;
+    }
+    final maxCount = math.min(100, availableCount);
+    var selectedCount = math.min(30, maxCount).toDouble();
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        void openExam() {
+          final selectedQuestions = questions.toList(growable: false)
+            ..shuffle(math.Random());
+          Navigator.of(sheetContext).pop();
+          widget.onOpen(
+            AptitudeQuestionDeckPage(
+              title: 'AI行测演练',
+              questions: selectedQuestions
+                  .take(selectedCount.round())
+                  .toList(growable: false),
+            ),
+          );
+        }
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return QuestionCountSheet(
+              title: 'AI行测演练',
+              subtitle: '选择题量后进入行测组卷',
+              count: selectedCount.round(),
+              maxCount: maxCount,
+              value: selectedCount,
+              onChanged: (value) => setDialogState(() => selectedCount = value),
+              footer: QuestionSheetPrimaryAction(
+                onPressed: openExam,
+                icon: const Icon(Icons.bolt_rounded),
+                label: '开始演练',
               ),
             );
           },
@@ -1464,20 +1902,104 @@ class _PracticeHubPageState extends State<PracticeHubPage> {
   }
 }
 
+class PracticeSubjectTabs extends StatelessWidget {
+  const PracticeSubjectTabs({
+    super.key,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final PracticeSubject selected;
+  final ValueChanged<PracticeSubject> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 42,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppColors.activeSurfaceHigh,
+        border: Border.all(color: AppColors.activeBorderStrong),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _PracticeSubjectTab(
+              label: '常识',
+              selected: selected == PracticeSubject.knowledge,
+              onTap: () => onSelected(PracticeSubject.knowledge),
+            ),
+          ),
+          Expanded(
+            child: _PracticeSubjectTab(
+              label: '行测',
+              selected: selected == PracticeSubject.aptitude,
+              onTap: () => onSelected(PracticeSubject.aptitude),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PracticeSubjectTab extends StatelessWidget {
+  const _PracticeSubjectTab({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? AppColors.accent : Colors.transparent,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? Colors.white : AppColors.activeMuted,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class PracticeGatewayCard extends StatelessWidget {
   const PracticeGatewayCard({
     super.key,
+    required this.subject,
     required this.totalQuestions,
     required this.onPracticeTap,
     required this.onAiExamTap,
   });
 
+  final PracticeSubject subject;
   final int totalQuestions;
   final VoidCallback onPracticeTap;
   final VoidCallback onAiExamTap;
 
   @override
   Widget build(BuildContext context) {
+    final knowledge = subject == PracticeSubject.knowledge;
     return AspectRatio(
       aspectRatio: 0.86,
       child: ClipRRect(
@@ -1497,12 +2019,14 @@ class PracticeGatewayCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: PracticeGatewayPane(
-                      symbol: '练',
-                      title: '练习模式',
-                      subtitle: '刷题、背题，按你的节奏掌握知识点',
+                      symbol: knowledge ? '常' : '行',
+                      title: knowledge ? '常识练习' : '行测练习',
+                      subtitle: knowledge
+                          ? '刷题、背题，按你的节奏掌握知识点'
+                          : '按类目刷题，专项突破薄弱题型',
                       metric: '$totalQuestions',
                       metricLabel: '可选题',
-                      buttonLabel: '选择练习',
+                      buttonLabel: knowledge ? '选择练习' : '选择行测',
                       accent: const Color(0xFFFF625F),
                       onTap: onPracticeTap,
                     ),
@@ -1510,8 +2034,8 @@ class PracticeGatewayCard extends StatelessWidget {
                   Expanded(
                     child: PracticeGatewayPane(
                       symbol: 'AI',
-                      title: 'AI真题演练',
-                      subtitle: '按题量组卷，交卷后生成演练结果',
+                      title: knowledge ? 'AI常识演练' : 'AI行测演练',
+                      subtitle: knowledge ? '按题量组卷，交卷后生成演练结果' : '随机组卷，进入行测真题演练',
                       metric: '$totalQuestions',
                       metricLabel: '真题池',
                       buttonLabel: '开始演练',
@@ -1794,13 +2318,13 @@ class QuestionCountSheet extends StatelessWidget {
       child: Container(
         decoration: BoxDecoration(
           color: AppColors.activeSurface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
         ),
         padding: EdgeInsets.fromLTRB(
-          20,
-          10,
-          20,
-          18 + MediaQuery.of(context).viewInsets.bottom,
+          18,
+          9,
+          18,
+          20 + MediaQuery.of(context).viewInsets.bottom,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1808,16 +2332,17 @@ class QuestionCountSheet extends StatelessWidget {
           children: [
             Center(
               child: Container(
-                width: 38,
+                width: 34,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: AppColors.activeBorderStrong,
+                  color: AppColors.activeBorder,
                   borderRadius: BorderRadius.circular(999),
                 ),
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
                   child: Column(
@@ -1827,37 +2352,198 @@ class QuestionCountSheet extends StatelessWidget {
                         title,
                         style: TextStyle(
                           color: AppColors.activeInk,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          height: 1.15,
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 6),
                       Text(
                         subtitle,
                         style: TextStyle(
                           color: AppColors.activeMuted,
-                          fontSize: 13,
+                          fontSize: 12,
+                          height: 1.25,
                         ),
                       ),
                     ],
                   ),
                 ),
-                AppChip(label: '$count/$maxCount 题', selected: true),
+                const SizedBox(width: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.accent,
+                    borderRadius: BorderRadius.circular(999),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.accent.withValues(alpha: 0.18),
+                        blurRadius: 12,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: Text(
+                    '$count/$maxCount 题',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 18),
-            Slider(
-              value: value.clamp(1, maxCount.toDouble()),
-              min: 1,
-              max: maxCount.toDouble(),
-              divisions: maxCount > 1 ? maxCount - 1 : null,
-              activeColor: AppColors.accent,
-              label: '$count 题',
-              onChanged: maxCount > 1 ? onChanged : null,
+            Container(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+              decoration: BoxDecoration(
+                color: AppColors.activeSurfaceHigh,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.activeBorder),
+              ),
+              child: Column(
+                children: [
+                  SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 5,
+                      thumbShape: const RoundSliderThumbShape(
+                        enabledThumbRadius: 9,
+                      ),
+                      overlayShape: const RoundSliderOverlayShape(
+                        overlayRadius: 18,
+                      ),
+                    ),
+                    child: Slider(
+                      value: value.clamp(1, maxCount.toDouble()),
+                      min: 1,
+                      max: maxCount.toDouble(),
+                      divisions: maxCount > 1 ? maxCount - 1 : null,
+                      activeColor: AppColors.accent,
+                      inactiveColor: AppColors.accentTint,
+                      label: '$count 题',
+                      onChanged: maxCount > 1 ? onChanged : null,
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Row(
+                      children: [
+                        Text(
+                          '1 题',
+                          style: TextStyle(
+                            color: AppColors.activeMuted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          '$maxCount 题',
+                          style: TextStyle(
+                            color: AppColors.activeMuted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
             footer,
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class QuestionModeActionRow extends StatelessWidget {
+  const QuestionModeActionRow({
+    super.key,
+    required this.onPractice,
+    required this.onMemorize,
+  });
+
+  final VoidCallback onPractice;
+  final VoidCallback onMemorize;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: QuestionSheetPrimaryAction(
+            onPressed: onPractice,
+            icon: const Icon(Icons.flash_on_rounded),
+            label: '刷题模式',
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: SizedBox(
+            height: 46,
+            child: OutlinedButton.icon(
+              onPressed: onMemorize,
+              icon: const Icon(Icons.visibility_rounded, size: 18),
+              label: const Text('背题模式'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.activeInk,
+                side: BorderSide(color: AppColors.activeBorderStrong),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class QuestionSheetPrimaryAction extends StatelessWidget {
+  const QuestionSheetPrimaryAction({
+    super.key,
+    required this.onPressed,
+    required this.icon,
+    required this.label,
+  });
+
+  final VoidCallback? onPressed;
+  final Widget icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 46,
+      child: FilledButton.icon(
+        onPressed: onPressed,
+        icon: IconTheme.merge(
+          data: const IconThemeData(size: 18, color: Colors.white),
+          child: icon,
+        ),
+        label: Text(label),
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.accent,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
         ),
       ),
     );
@@ -2395,7 +3081,6 @@ class _KnowledgeDetailPageState extends State<KnowledgeDetailPage> {
   Widget build(BuildContext context) {
     final article = _articleBody();
     final note = _notes[widget.topic.id] ?? '';
-    final questions = questionsForTopic(widget.topic.id);
     final segments = widget.topic.segments;
 
     return DetailScaffold(
@@ -2528,35 +3213,22 @@ class _KnowledgeDetailPageState extends State<KnowledgeDetailPage> {
             ),
           ],
           const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: widget.topic.segments.isEmpty
-                      ? null
-                      : () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => KnowledgeCardDeckPage(
-                              topic: widget.topic,
-                              initialIndex: widget.initialIndex,
-                            ),
-                          ),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: widget.topic.segments.isEmpty
+                  ? null
+                  : () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => KnowledgeCardDeckPage(
+                          topic: widget.topic,
+                          initialIndex: widget.initialIndex,
                         ),
-                  icon: const Icon(Icons.style_rounded),
-                  label: Text('${widget.topic.segments.length} 张卡片'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: questions.isEmpty
-                      ? null
-                      : () => _showQuestionModeSheet(context, questions),
-                  icon: const Icon(Icons.quiz_rounded),
-                  label: Text('${questions.length} 道题目'),
-                ),
-              ),
-            ],
+                      ),
+                    ),
+              icon: const Icon(Icons.style_rounded),
+              label: Text('${widget.topic.segments.length} 张卡片'),
+            ),
           ),
         ],
       ),
@@ -2576,131 +3248,6 @@ class _KnowledgeDetailPageState extends State<KnowledgeDetailPage> {
       return '暂无正文内容';
     }
     return parts.join('\n\n');
-  }
-
-  Future<void> _showQuestionModeSheet(
-    BuildContext context,
-    List<PracticeQuestion> questions,
-  ) async {
-    final maxCount = questions.length;
-    var selectedCount = math.min(30, maxCount).toDouble();
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) {
-        void openPractice({required bool memorizationMode}) {
-          final selectedQuestions = randomQuestionSample(
-            questions,
-            selectedCount.round(),
-          );
-          Navigator.of(sheetContext).pop();
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => PracticeExamPage(
-                title: memorizationMode ? '背题模式' : '${widget.topic.title}练习',
-                questions: selectedQuestions,
-                instantFeedback: !memorizationMode,
-                memorizationMode: memorizationMode,
-              ),
-            ),
-          );
-        }
-
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            final count = selectedCount.round();
-            return SafeArea(
-              top: false,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: AppColors.activeSurface,
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(18),
-                  ),
-                ),
-                padding: EdgeInsets.fromLTRB(
-                  20,
-                  10,
-                  20,
-                  18 + MediaQuery.of(sheetContext).viewInsets.bottom,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 38,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: AppColors.activeBorderStrong,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    Row(
-                      children: [
-                        Text(
-                          '选择题目',
-                          style: TextStyle(
-                            color: AppColors.activeInk,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const Spacer(),
-                        Text(
-                          '$count/$maxCount 题',
-                          style: TextStyle(
-                            color: AppColors.accent,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 18),
-                    Slider(
-                      value: selectedCount.clamp(1, maxCount.toDouble()),
-                      min: 1,
-                      max: maxCount.toDouble(),
-                      divisions: maxCount > 1 ? maxCount - 1 : null,
-                      activeColor: AppColors.accent,
-                      label: '$count 题',
-                      onChanged: maxCount > 1
-                          ? (value) =>
-                                setDialogState(() => selectedCount = value)
-                          : null,
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: FilledButton.icon(
-                            onPressed: () =>
-                                openPractice(memorizationMode: false),
-                            icon: const Icon(Icons.flash_on_rounded),
-                            label: const Text('刷题模式'),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () =>
-                                openPractice(memorizationMode: true),
-                            icon: const Icon(Icons.visibility_rounded),
-                            label: const Text('背题模式'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
   }
 
   void _editNote(BuildContext context) {
@@ -3319,6 +3866,14 @@ class _KnowledgeCardDeckPageState extends State<KnowledgeCardDeckPage> {
     return PopupMenuButton<String>(
       tooltip: '更多',
       icon: const Icon(Icons.more_horiz_rounded),
+      color: AppColors.activeSurface,
+      elevation: 5,
+      shadowColor: const Color(0x22000000),
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      constraints: const BoxConstraints.tightFor(width: 132),
+      position: PopupMenuPosition.under,
+      offset: const Offset(0, 6),
       onSelected: (value) async {
         if (value == 'favorite') {
           final loggedIn = await ensureLoggedIn(context);
@@ -3359,32 +3914,29 @@ class _KnowledgeCardDeckPageState extends State<KnowledgeCardDeckPage> {
       itemBuilder: (context) => const [
         PopupMenuItem(
           value: 'favorite',
-          child: Row(
-            children: [
-              Icon(Icons.bookmark_add_outlined),
-              SizedBox(width: 10),
-              Text('收藏'),
-            ],
+          height: 38,
+          padding: EdgeInsets.zero,
+          child: CompactCardMenuItem(
+            icon: Icons.star_border_rounded,
+            label: '收藏',
           ),
         ),
         PopupMenuItem(
           value: 'note',
-          child: Row(
-            children: [
-              Icon(Icons.edit_note_rounded),
-              SizedBox(width: 10),
-              Text('记笔记'),
-            ],
+          height: 38,
+          padding: EdgeInsets.zero,
+          child: CompactCardMenuItem(
+            icon: Icons.edit_note_rounded,
+            label: '记笔记',
           ),
         ),
         PopupMenuItem(
           value: 'feedback',
-          child: Row(
-            children: [
-              Icon(Icons.report_gmailerrorred_rounded),
-              SizedBox(width: 10),
-              Text('错题反馈'),
-            ],
+          height: 38,
+          padding: EdgeInsets.zero,
+          child: CompactCardMenuItem(
+            icon: Icons.report_gmailerrorred_rounded,
+            label: '错题反馈',
           ),
         ),
       ],
@@ -3404,6 +3956,38 @@ class _KnowledgeCardDeckPageState extends State<KnowledgeCardDeckPage> {
         _cardNoteFocusNode.requestFocus();
       }
     });
+  }
+}
+
+class CompactCardMenuItem extends StatelessWidget {
+  const CompactCardMenuItem({
+    super.key,
+    required this.icon,
+    required this.label,
+  });
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: AppColors.activeInk),
+          const SizedBox(width: 10),
+          Text(
+            label,
+            style: TextStyle(
+              color: AppColors.activeInk,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -4452,29 +5036,20 @@ class _PracticeExamPageState extends State<PracticeExamPage> {
       );
     }
 
+    final progress = (_index + 1) / widget.questions.length;
     return DetailScaffold(
       title: widget.title,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              AppChip(label: '${_index + 1}/${widget.questions.length}'),
-              const SizedBox(width: 8),
-              AppChip(
-                label: widget.memorizationMode
-                    ? '背题模式'
-                    : widget.instantFeedback
-                    ? '即时反馈'
-                    : '统一交卷',
-              ),
-              const Spacer(),
-              if (_submitted)
-                AppChip(
-                  label: '得分 ${_score()}/${widget.questions.length}',
-                  selected: true,
-                ),
-            ],
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 6,
+              backgroundColor: AppColors.blueTint,
+              valueColor: const AlwaysStoppedAnimation<Color>(AppColors.blue),
+            ),
           ),
           const SizedBox(height: 16),
           Expanded(
@@ -4485,6 +5060,7 @@ class _PracticeExamPageState extends State<PracticeExamPage> {
               itemBuilder: (context, index) {
                 final pageQuestion = widget.questions[index];
                 return _QuestionPracticeContent(
+                  index: index,
                   question: pageQuestion,
                   selected: _answers[pageQuestion.id],
                   reveal:
@@ -4504,11 +5080,14 @@ class _PracticeExamPageState extends State<PracticeExamPage> {
           ),
           if (!widget.instantFeedback && !widget.memorizationMode) ...[
             const SizedBox(height: 12),
-            FilledButton(
+            QuestionSheetPrimaryAction(
               onPressed: _submitted
                   ? null
                   : () => setState(() => _submitted = true),
-              child: const Text('交卷看成绩'),
+              icon: const Icon(Icons.assignment_turned_in_rounded),
+              label: _submitted
+                  ? '得分 ${_score()}/${widget.questions.length}'
+                  : '交卷看成绩',
             ),
           ],
           if (_submitted) ...[
@@ -4556,6 +5135,7 @@ Future<void> playAnswerFeedback() async {
 
 class _QuestionPracticeContent extends StatelessWidget {
   const _QuestionPracticeContent({
+    required this.index,
     required this.question,
     required this.selected,
     required this.reveal,
@@ -4564,6 +5144,7 @@ class _QuestionPracticeContent extends StatelessWidget {
     required this.onSelect,
   });
 
+  final int index;
   final PracticeQuestion question;
   final String? selected;
   final bool reveal;
@@ -4579,12 +5160,32 @@ class _QuestionPracticeContent extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            question.question,
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w600,
-              height: 1.42,
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: softCardDecoration(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '第 ${index + 1} 题',
+                  style: const TextStyle(
+                    color: AppColors.blue,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  question.question,
+                  style: TextStyle(
+                    color: AppColors.activeInk,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    height: 1.48,
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 16),
@@ -4764,6 +5365,7 @@ class _AIExamPageState extends State<AIExamPage> {
               itemBuilder: (context, index) {
                 final pageQuestion = widget.questions[index];
                 return _QuestionPracticeContent(
+                  index: index,
                   question: pageQuestion,
                   selected: _answers[pageQuestion.id],
                   reveal: false,
@@ -5743,14 +6345,956 @@ String _formatRowTime(int value) {
   return formatShortDateTime(DateTime.fromMillisecondsSinceEpoch(value));
 }
 
-class AptitudePlaceholderPage extends StatelessWidget {
-  const AptitudePlaceholderPage({super.key});
+Future<AptitudeCatalog>? _bundledAptitudeCatalogFuture;
+AptitudeCatalog? _bundledAptitudeCatalog;
+
+Future<AptitudeCatalog> loadBundledAptitudeCatalog() {
+  final catalog = _bundledAptitudeCatalog;
+  if (catalog != null) {
+    return Future.value(catalog);
+  }
+  return _bundledAptitudeCatalogFuture ??= _readBundledAptitudeCatalog();
+}
+
+Future<AptitudeCatalog> _readBundledAptitudeCatalog() async {
+  final tables = await LocalSqliteStore.instance.aptitudeCatalogTables();
+  final catalog = AptitudeCatalog.fromSeedTables(tables);
+  if (catalog.categories.isNotEmpty) {
+    _bundledAptitudeCatalog = catalog;
+  }
+  return catalog;
+}
+
+void debugSetAptitudeCatalogForTesting(AptitudeCatalog catalog) {
+  _bundledAptitudeCatalog = catalog;
+  _bundledAptitudeCatalogFuture = Future.value(catalog);
+}
+
+List<Map<String, Object?>> _aptitudeSeedRows(
+  Map<String, Object?> tables,
+  String tableName,
+) {
+  final raw = tables[tableName];
+  if (raw is! List) {
+    return const <Map<String, Object?>>[];
+  }
+  return raw
+      .whereType<Map>()
+      .map((row) => row.map((key, value) => MapEntry('$key', value as Object?)))
+      .toList(growable: false);
+}
+
+class AptitudeCatalog {
+  const AptitudeCatalog({required this.categories, required this.questions});
+
+  final List<AptitudeCategoryEntry> categories;
+  final List<AptitudeQuestion> questions;
+
+  factory AptitudeCatalog.fromSeedTables(Map<String, Object?> tables) {
+    final categoryRows = _aptitudeSeedRows(tables, 'aptitude_category');
+    final subcategoryRows = _aptitudeSeedRows(tables, 'aptitude_subcategory');
+    final questionRows = _aptitudeSeedRows(tables, 'aptitude_question');
+
+    final questions =
+        questionRows.map(AptitudeQuestion.fromRow).toList(growable: false)
+          ..sort((a, b) => a.questionNumber.compareTo(b.questionNumber));
+    final questionCountBySubcategory = <String, int>{};
+    for (final question in questions) {
+      questionCountBySubcategory.update(
+        question.subcategoryId,
+        (value) => value + 1,
+        ifAbsent: () => 1,
+      );
+    }
+
+    final subcategoriesByCategory = <String, List<AptitudeSubcategoryEntry>>{};
+    for (final row in subcategoryRows) {
+      final entry = AptitudeSubcategoryEntry.fromRow(
+        row,
+        questionCount: questionCountBySubcategory[_rowString(row, 'id')] ?? 0,
+      );
+      subcategoriesByCategory
+          .putIfAbsent(entry.categoryId, () => <AptitudeSubcategoryEntry>[])
+          .add(entry);
+    }
+    for (final entries in subcategoriesByCategory.values) {
+      entries.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    }
+
+    final categories =
+        categoryRows
+            .map(
+              (row) => AptitudeCategoryEntry.fromRow(
+                row,
+                subcategories:
+                    subcategoriesByCategory[_rowString(row, 'id')] ??
+                    const <AptitudeSubcategoryEntry>[],
+              ),
+            )
+            .toList(growable: false)
+          ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+    return AptitudeCatalog(categories: categories, questions: questions);
+  }
+
+  List<AptitudeQuestion> questionsForSubcategory(String subcategoryId) {
+    return questions
+        .where((question) => question.subcategoryId == subcategoryId)
+        .toList(growable: false);
+  }
+}
+
+class AptitudeCategoryEntry {
+  const AptitudeCategoryEntry({
+    required this.id,
+    required this.title,
+    required this.sortOrder,
+    required this.subcategories,
+  });
+
+  final String id;
+  final String title;
+  final int sortOrder;
+  final List<AptitudeSubcategoryEntry> subcategories;
+
+  factory AptitudeCategoryEntry.fromRow(
+    Map<String, Object?> row, {
+    required List<AptitudeSubcategoryEntry> subcategories,
+  }) {
+    return AptitudeCategoryEntry(
+      id: _rowString(row, 'id'),
+      title: _rowString(row, 'category_title'),
+      sortOrder: _rowInt(row, 'sort_order'),
+      subcategories: subcategories,
+    );
+  }
+
+  int get questionCount => subcategories.fold(
+    0,
+    (sum, subcategory) => sum + subcategory.questionCount,
+  );
+}
+
+String _aptitudeCategoryDisplayTitle(String title) {
+  return title == '言语理解与表达' ? '言语理解' : title;
+}
+
+class AptitudeSubcategoryEntry {
+  const AptitudeSubcategoryEntry({
+    required this.id,
+    required this.categoryId,
+    required this.title,
+    required this.sortOrder,
+    required this.questionCount,
+  });
+
+  final String id;
+  final String categoryId;
+  final String title;
+  final int sortOrder;
+  final int questionCount;
+
+  factory AptitudeSubcategoryEntry.fromRow(
+    Map<String, Object?> row, {
+    required int questionCount,
+  }) {
+    return AptitudeSubcategoryEntry(
+      id: _rowString(row, 'id'),
+      categoryId: _rowString(row, 'category_id'),
+      title: _rowString(row, 'subcategory_title'),
+      sortOrder: _rowInt(row, 'sort_order'),
+      questionCount: questionCount,
+    );
+  }
+}
+
+class AptitudeQuestion {
+  const AptitudeQuestion({
+    required this.id,
+    required this.categoryId,
+    required this.subcategoryId,
+    required this.questionNumber,
+    required this.questionText,
+    required this.questionImage,
+    required this.options,
+    required this.answerKey,
+    required this.explanation,
+    required this.sourceName,
+    required this.sourcePage,
+  });
+
+  final String id;
+  final String categoryId;
+  final String subcategoryId;
+  final int questionNumber;
+  final String questionText;
+  final String questionImage;
+  final List<AptitudeOption> options;
+  final String answerKey;
+  final String explanation;
+  final String sourceName;
+  final int sourcePage;
+
+  factory AptitudeQuestion.fromRow(Map<String, Object?> row) {
+    return AptitudeQuestion(
+      id: _rowString(row, 'id'),
+      categoryId: _rowString(row, 'category_id'),
+      subcategoryId: _rowString(row, 'subcategory_id'),
+      questionNumber: _rowInt(row, 'question_number'),
+      questionText: _rowString(row, 'question_text'),
+      questionImage: _rowString(row, 'question_image'),
+      options: const ['A', 'B', 'C', 'D']
+          .map(
+            (label) => AptitudeOption(
+              label: label,
+              text: _rowString(row, 'option_${label.toLowerCase()}'),
+              imagePath: _rowString(row, 'option_${label.toLowerCase()}_image'),
+            ),
+          )
+          .toList(growable: false),
+      answerKey: _rowString(row, 'answer_key'),
+      explanation: _rowString(row, 'explanation'),
+      sourceName: _rowString(row, 'source_name'),
+      sourcePage: _rowInt(row, 'source_page'),
+    );
+  }
+}
+
+class AptitudeOption {
+  const AptitudeOption({
+    required this.label,
+    required this.text,
+    required this.imagePath,
+  });
+
+  final String label;
+  final String text;
+  final String imagePath;
+
+  bool get hasImage => imagePath.isNotEmpty;
+
+  String get displayText {
+    if (hasImage && text.startsWith('图片选项')) {
+      return '';
+    }
+    return text;
+  }
+}
+
+class AptitudeCategoryPage extends StatefulWidget {
+  const AptitudeCategoryPage({super.key, this.initialCategoryId});
+
+  final String? initialCategoryId;
+
+  @override
+  State<AptitudeCategoryPage> createState() => _AptitudeCategoryPageState();
+}
+
+class _AptitudeCategoryPageState extends State<AptitudeCategoryPage> {
+  @override
+  Widget build(BuildContext context) {
+    return DetailScaffold(
+      title: '行测',
+      child: AptitudeCategoryBrowser(
+        initialCategoryId: widget.initialCategoryId,
+      ),
+    );
+  }
+}
+
+class AptitudeTabPage extends StatelessWidget {
+  const AptitudeTabPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const DetailScaffold(
-      title: '行测',
-      child: EmptyState(message: '暂无行测内容'),
+    return const AppScaffold(title: '行测', child: AptitudeCategoryBrowser());
+  }
+}
+
+class AptitudeCategoryBrowser extends StatefulWidget {
+  const AptitudeCategoryBrowser({super.key, this.initialCategoryId});
+
+  final String? initialCategoryId;
+
+  @override
+  State<AptitudeCategoryBrowser> createState() =>
+      _AptitudeCategoryBrowserState();
+}
+
+class _AptitudeCategoryBrowserState extends State<AptitudeCategoryBrowser> {
+  String? _selectedCategoryId;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedCategoryId = widget.initialCategoryId;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<AptitudeCatalog>(
+      future: loadBundledAptitudeCatalog(),
+      initialData: _bundledAptitudeCatalog,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final catalog = snapshot.data;
+        if (catalog == null || catalog.categories.isEmpty) {
+          return const EmptyState(message: '暂无行测类目');
+        }
+        final selectedCategory = _selectedCategory(catalog);
+        return _AptitudeCategoryTopicLayout(
+          catalog: catalog,
+          selectedCategory: selectedCategory,
+          onSelected: (id) => setState(() => _selectedCategoryId = id),
+          onSubcategoryTap: (subcategory) => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => AptitudeQuestionDeckPage(
+                title: subcategory.title,
+                questions: catalog.questionsForSubcategory(subcategory.id),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  AptitudeCategoryEntry _selectedCategory(AptitudeCatalog catalog) {
+    final selectedId = _selectedCategoryId;
+    if (selectedId != null) {
+      for (final category in catalog.categories) {
+        if (category.id == selectedId) {
+          return category;
+        }
+      }
+    }
+    for (final category in catalog.categories) {
+      if (category.questionCount > 0) {
+        _selectedCategoryId = category.id;
+        return category;
+      }
+    }
+    _selectedCategoryId = catalog.categories.first.id;
+    return catalog.categories.first;
+  }
+}
+
+class _AptitudeCategoryTopicLayout extends StatelessWidget {
+  const _AptitudeCategoryTopicLayout({
+    required this.catalog,
+    required this.selectedCategory,
+    required this.onSelected,
+    required this.onSubcategoryTap,
+  });
+
+  final AptitudeCatalog catalog;
+  final AptitudeCategoryEntry selectedCategory;
+  final ValueChanged<String> onSelected;
+  final ValueChanged<AptitudeSubcategoryEntry> onSubcategoryTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 96,
+          child: _AptitudeCategoryRail(
+            categories: catalog.categories,
+            selectedId: selectedCategory.id,
+            onSelected: onSelected,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SectionTitle('子类目'),
+              const SizedBox(height: 10),
+              if (selectedCategory.subcategories.isEmpty)
+                const EmptyState(message: '这个类目还没有子类目')
+              else
+                for (final subcategory in selectedCategory.subcategories) ...[
+                  _AptitudeSubcategoryCard(
+                    subcategory: subcategory,
+                    onTap: () => onSubcategoryTap(subcategory),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AptitudeCategoryRail extends StatelessWidget {
+  const _AptitudeCategoryRail({
+    required this.categories,
+    required this.selectedId,
+    required this.onSelected,
+  });
+
+  final List<AptitudeCategoryEntry> categories;
+  final String selectedId;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        for (var i = 0; i < categories.length; i++) ...[
+          _AptitudeCategoryRailItem(
+            category: categories[i],
+            selected: categories[i].id == selectedId,
+            onTap: () => onSelected(categories[i].id),
+          ),
+          if (i != categories.length - 1) const SizedBox(height: 8),
+        ],
+      ],
+    );
+  }
+}
+
+class _AptitudeCategoryRailItem extends StatelessWidget {
+  const _AptitudeCategoryRailItem({
+    required this.category,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final AptitudeCategoryEntry category;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = AppColors.accent;
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        constraints: const BoxConstraints(minHeight: 42),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+        decoration: BoxDecoration(
+          color: selected ? color.withValues(alpha: 0.1) : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              width: 3,
+              height: selected ? 22 : 0,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                category.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: selected ? color : AppColors.activeInk,
+                  fontSize: 12,
+                  height: 1.15,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AptitudeSubcategoryCard extends StatelessWidget {
+  const _AptitudeSubcategoryCard({
+    required this.subcategory,
+    required this.onTap,
+  });
+
+  final AptitudeSubcategoryEntry subcategory;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = subcategory.questionCount == 0 ? 0.0 : 0.0;
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 13, 12, 13),
+        decoration: softCardDecoration(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              subcategory.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: AppColors.activeInk,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: LinearProgressIndicator(
+                      value: progress,
+                      minHeight: 5,
+                      backgroundColor: AppColors.activeBorder,
+                      color: AppColors.accent,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  '0/${subcategory.questionCount}',
+                  style: TextStyle(
+                    color: AppColors.activeInk,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppColors.activeSubtle,
+                  size: 18,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class AptitudeQuestionDeckPage extends StatefulWidget {
+  const AptitudeQuestionDeckPage({
+    super.key,
+    required this.title,
+    required this.questions,
+  });
+
+  final String title;
+  final List<AptitudeQuestion> questions;
+
+  @override
+  State<AptitudeQuestionDeckPage> createState() =>
+      _AptitudeQuestionDeckPageState();
+}
+
+class _AptitudeQuestionDeckPageState extends State<AptitudeQuestionDeckPage> {
+  late final PageController _controller;
+  final Map<String, String> _answers = {};
+  var _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = PageController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.questions.isEmpty) {
+      return DetailScaffold(
+        title: widget.title,
+        child: const EmptyState(message: '这个类目的题目还没导入'),
+      );
+    }
+
+    final progress = (_index + 1) / widget.questions.length;
+    return DetailScaffold(
+      title: widget.title,
+      trailing: _buildQuestionMenu(widget.questions[_index]),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 6,
+              backgroundColor: AppColors.blueTint,
+              valueColor: const AlwaysStoppedAnimation<Color>(AppColors.blue),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: PageView.builder(
+              controller: _controller,
+              itemCount: widget.questions.length,
+              onPageChanged: (index) => setState(() => _index = index),
+              itemBuilder: (context, index) {
+                final question = widget.questions[index];
+                return _AptitudeQuestionContent(
+                  question: question,
+                  selected: _answers[question.id],
+                  onSelect: (answer) {
+                    playAnswerFeedback();
+                    setState(() => _answers[question.id] = answer);
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  PopupMenuButton<String> _buildQuestionMenu(AptitudeQuestion question) {
+    return PopupMenuButton<String>(
+      tooltip: '更多',
+      icon: const Icon(Icons.more_horiz_rounded),
+      color: AppColors.activeSurface,
+      elevation: 5,
+      shadowColor: const Color(0x22000000),
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      constraints: const BoxConstraints.tightFor(width: 132),
+      position: PopupMenuPosition.under,
+      offset: const Offset(0, 6),
+      onSelected: (value) async {
+        if (value == 'favorite') {
+          await _saveQuestionFavorite(question);
+          return;
+        }
+        if (value == 'note') {
+          await _editQuestionNote(question);
+          return;
+        }
+        if (value == 'feedback') {
+          showToast(context, '已收到错题反馈');
+        }
+      },
+      itemBuilder: (context) => const [
+        PopupMenuItem(
+          value: 'favorite',
+          height: 38,
+          padding: EdgeInsets.zero,
+          child: CompactCardMenuItem(
+            icon: Icons.star_border_rounded,
+            label: '收藏',
+          ),
+        ),
+        PopupMenuItem(
+          value: 'note',
+          height: 38,
+          padding: EdgeInsets.zero,
+          child: CompactCardMenuItem(
+            icon: Icons.edit_note_rounded,
+            label: '记笔记',
+          ),
+        ),
+        PopupMenuItem(
+          value: 'feedback',
+          height: 38,
+          padding: EdgeInsets.zero,
+          child: CompactCardMenuItem(
+            icon: Icons.report_gmailerrorred_rounded,
+            label: '错题反馈',
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _saveQuestionFavorite(AptitudeQuestion question) async {
+    final loggedIn = await ensureLoggedIn(context);
+    if (!loggedIn) {
+      return;
+    }
+    try {
+      await LocalSqliteStore.instance.saveFavoriteItem(
+        favoriteType: '行测题目',
+        targetId: question.id,
+        title: '${widget.title} · 第 ${question.questionNumber} 题',
+        summary: question.questionText,
+      );
+      if (mounted) {
+        showToast(context, '已加入收藏');
+      }
+    } catch (error) {
+      if (mounted && isLoginRequiredError(error)) {
+        await openLoginPage(context);
+      } else if (mounted) {
+        showToast(context, '$error');
+      }
+    }
+  }
+
+  Future<void> _editQuestionNote(AptitudeQuestion question) async {
+    final loggedIn = await ensureLoggedIn(context);
+    if (!loggedIn || !mounted) {
+      return;
+    }
+    final controller = TextEditingController();
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('题目笔记'),
+          content: TextField(
+            controller: controller,
+            minLines: 3,
+            maxLines: 5,
+            decoration: const InputDecoration(hintText: '写下解题思路、易错点或公式'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                try {
+                  await LocalSqliteStore.instance.saveUserNote(
+                    noteType: '行测题目',
+                    targetId: question.id,
+                    title: '${widget.title} · 第 ${question.questionNumber} 题',
+                    content: controller.text.trim(),
+                  );
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop();
+                  }
+                  if (mounted) {
+                    showToast(context, '笔记已保存');
+                  }
+                } catch (error) {
+                  if (dialogContext.mounted && isLoginRequiredError(error)) {
+                    Navigator.of(dialogContext).pop();
+                    if (mounted) {
+                      await openLoginPage(context);
+                    }
+                  } else if (mounted) {
+                    showToast(context, '$error');
+                  }
+                }
+              },
+              child: const Text('保存'),
+            ),
+          ],
+        );
+      },
+    );
+    controller.dispose();
+  }
+}
+
+class _AptitudeQuestionContent extends StatelessWidget {
+  const _AptitudeQuestionContent({
+    required this.question,
+    required this.selected,
+    required this.onSelect,
+  });
+
+  final AptitudeQuestion question;
+  final String? selected;
+  final ValueChanged<String> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final reveal = selected != null;
+    final correct = selected == question.answerKey;
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: softCardDecoration(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '第 ${question.questionNumber} 题',
+                  style: TextStyle(
+                    color: AppColors.blue,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  question.questionText,
+                  style: TextStyle(
+                    color: AppColors.activeInk,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    height: 1.48,
+                  ),
+                ),
+                if (question.questionImage.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.asset(
+                      question.questionImage,
+                      width: double.infinity,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          for (final option in question.options) ...[
+            _AptitudeOptionCard(
+              option: option,
+              selected: selected == option.label,
+              correct: reveal && question.answerKey == option.label,
+              wrong:
+                  reveal &&
+                  selected == option.label &&
+                  selected != question.answerKey,
+              onTap: reveal ? null : () => onSelect(option.label),
+            ),
+            const SizedBox(height: 10),
+          ],
+          if (reveal) ...[
+            const SizedBox(height: 8),
+            LabelBlock(
+              label: correct ? '回答正确' : '解析',
+              body: '正确答案：${question.answerKey}\n${question.explanation}',
+            ),
+            if (question.sourceName.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                '来源：${question.sourceName} · 第 ${question.sourcePage} 页',
+                style: TextStyle(color: AppColors.activeMuted, fontSize: 12),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _AptitudeOptionCard extends StatelessWidget {
+  const _AptitudeOptionCard({
+    required this.option,
+    required this.selected,
+    required this.correct,
+    required this.wrong,
+    required this.onTap,
+  });
+
+  final AptitudeOption option;
+  final bool selected;
+  final bool correct;
+  final bool wrong;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = correct
+        ? AppColors.green
+        : wrong
+        ? AppColors.red
+        : selected
+        ? AppColors.blue
+        : AppColors.activeBorderStrong;
+    final labelColor = correct || wrong || selected
+        ? Colors.white
+        : AppColors.activeInk;
+    final tint = correct
+        ? AppColors.tintFor(AppColors.green)
+        : wrong
+        ? AppColors.tintFor(AppColors.red)
+        : selected
+        ? AppColors.blueTint
+        : AppColors.activeSurface;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: selected || correct || wrong ? tint : AppColors.activeSurface,
+          border: Border.all(
+            color: selected || correct || wrong
+                ? color
+                : AppColors.activeBorderStrong,
+          ),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CircleAvatar(
+              radius: 16,
+              backgroundColor: color,
+              child: Text(
+                option.label,
+                style: TextStyle(
+                  color: labelColor,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (option.displayText.isNotEmpty)
+                    Text(
+                      option.displayText,
+                      style: TextStyle(
+                        color: AppColors.activeInk,
+                        fontWeight: FontWeight.w700,
+                        height: 1.42,
+                      ),
+                    ),
+                  if (option.hasImage) ...[
+                    if (option.displayText.isNotEmpty)
+                      const SizedBox(height: 10),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.asset(
+                        option.imagePath,
+                        width: double.infinity,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -7098,7 +8642,6 @@ class KnowledgeTopicCard extends StatelessWidget {
     final progress = topic.segments.isEmpty
         ? 0.0
         : learned / topic.segments.length;
-    final questions = questionsForTopic(topic.id);
     final color = AppColors.accent;
 
     return InkWell(
@@ -7110,15 +8653,6 @@ class KnowledgeTopicCard extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 4,
-              height: 42,
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -7136,15 +8670,6 @@ class KnowledgeTopicCard extends StatelessWidget {
                             fontWeight: FontWeight.w600,
                             color: AppColors.activeInk,
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '$learned/${topic.segments.length}',
-                        style: TextStyle(
-                          color: AppColors.activeInk,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
@@ -7165,9 +8690,9 @@ class KnowledgeTopicCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 10),
                       Text(
-                        '${questions.length} 题',
+                        '$learned/${topic.segments.length}',
                         style: TextStyle(
-                          color: AppColors.activeMuted,
+                          color: AppColors.activeInk,
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
                         ),
@@ -8341,6 +9866,7 @@ class AppScaffold extends StatelessWidget {
     this.titleWidget,
     this.titleLeading,
     this.trailing,
+    this.backgroundColor,
   });
 
   final String title;
@@ -8348,11 +9874,12 @@ class AppScaffold extends StatelessWidget {
   final Widget? titleWidget;
   final Widget? titleLeading;
   final Widget? trailing;
+  final Color? backgroundColor;
 
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
-      color: AppColors.activeBackground,
+      color: backgroundColor ?? AppColors.activeBackground,
       child: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
@@ -8582,7 +10109,8 @@ List<BoxShadow> appSoftShadows({double opacity = 1}) {
 }
 
 abstract final class AppColors {
-  static const background = Color(0xFFF5F7FA);
+  static const homeBackground = Color(0xFFFFFFFF);
+  static const background = homeBackground;
   static const surface = Color(0xFFFFFFFF);
   static const surfaceHigh = Color(0xFFFBFCFE);
   static const ink = Color(0xFF17212B);
