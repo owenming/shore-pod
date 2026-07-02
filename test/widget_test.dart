@@ -18,7 +18,74 @@ Map<String, Object?> loadSeedTablesFromFiles() {
   };
 }
 
+String _normalizeTestText(String value) {
+  return value
+      .replaceAll(RegExp("[\\s，,。；;：:、（）()《》“”\"'‘’]"), '')
+      .toLowerCase();
+}
+
 void main() {
+  test('bundled seed contains knowledge cloze blanks', () {
+    final tables = loadSeedTablesFromFiles();
+    final segmentRows = (tables['basic_knowledge_segment'] as List).cast<Map>();
+    final clozeRows = (tables['basic_knowledge_cloze_blank'] as List)
+        .cast<Map>();
+    final segmentById = {for (final row in segmentRows) '${row['id']}': row};
+
+    expect(clozeRows.length, greaterThan(8000));
+    expect(
+      clozeRows.every(
+        (row) => segmentById.containsKey(row['knowledge_segment_id']),
+      ),
+      isTrue,
+    );
+    expect(
+      clozeRows.every(
+        (row) =>
+            '${row['answer_text']}'.isNotEmpty &&
+            row['start_offset'] is int &&
+            row['end_offset'] is int &&
+            (row['start_offset'] as int) < (row['end_offset'] as int),
+      ),
+      isTrue,
+    );
+
+    for (final row in clozeRows.take(200)) {
+      final segment = segmentById['${row['knowledge_segment_id']}']!;
+      final source = ClozeExercise.fromSegment(
+        KnowledgeSegment(
+          id: '${segment['id']}',
+          topicId: '${segment['basic_knowledge_id']}',
+          index: segment['paragraph_index'] as int,
+          content: '${segment['content']}',
+          details: '${segment['content_details']}',
+        ),
+      ).source;
+      expect(
+        source.substring(row['start_offset'] as int, row['end_offset'] as int),
+        row['answer_text'],
+      );
+    }
+    for (final row in clozeRows) {
+      final segment = segmentById['${row['knowledge_segment_id']}']!;
+      final source = ClozeExercise.fromSegment(
+        KnowledgeSegment(
+          id: '${segment['id']}',
+          topicId: '${segment['basic_knowledge_id']}',
+          index: segment['paragraph_index'] as int,
+          content: '${segment['content']}',
+          details: '${segment['content_details']}',
+        ),
+      ).source;
+      final bodyStart = source.contains('\n') ? source.indexOf('\n') + 1 : 0;
+      expect(row['start_offset'] as int, greaterThanOrEqualTo(bodyStart));
+      expect(
+        _normalizeTestText('${segment['content']}'),
+        isNot(contains(_normalizeTestText('${row['answer_text']}'))),
+      );
+    }
+  });
+
   test('bundled seed contains aptitude category hierarchy', () {
     final tables = loadSeedTablesFromFiles();
     final categoryRows = (tables['aptitude_category'] as List).cast<Map>();
@@ -217,11 +284,7 @@ void main() {
     for (final row in graphicRows) {
       expect(File('${row['question_image']}').existsSync(), isTrue);
     }
-    final pageImageRows = [
-      ...mathRows,
-      ...numberReasoningRows,
-      ...dataAnalysisRows,
-    ];
+    final pageImageRows = [...numberReasoningRows, ...dataAnalysisRows];
     expect(
       pageImageRows.every((row) => '${row['question_image']}'.isNotEmpty),
       isTrue,
@@ -241,7 +304,7 @@ void main() {
       expect(File('${row['question_image']}').existsSync(), isTrue);
     }
 
-    final imageRows = questionRows
+    final definitionOptionImageRows = definitionRows
         .where(
           (row) =>
               '${row['option_a_image'] ?? ''}'.isNotEmpty ||
@@ -250,14 +313,14 @@ void main() {
               '${row['option_d_image'] ?? ''}'.isNotEmpty,
         )
         .toList(growable: false);
-    expect(imageRows.map((row) => row['question_number']), [
+    expect(definitionOptionImageRows.map((row) => row['question_number']), [
       134,
       162,
       210,
       914,
       928,
     ]);
-    for (final row in imageRows) {
+    for (final row in definitionOptionImageRows) {
       for (final key in [
         'option_a_image',
         'option_b_image',
@@ -266,6 +329,33 @@ void main() {
       ]) {
         final path = '${row[key]}';
         expect(path, startsWith('assets/images/aptitude/definition_judgment/'));
+        expect(File(path).existsSync(), isTrue);
+      }
+    }
+    final mathOptionImageRows = mathRows
+        .where(
+          (row) =>
+              '${row['option_a_image'] ?? ''}'.isNotEmpty ||
+              '${row['option_b_image'] ?? ''}'.isNotEmpty ||
+              '${row['option_c_image'] ?? ''}'.isNotEmpty ||
+              '${row['option_d_image'] ?? ''}'.isNotEmpty,
+        )
+        .toList(growable: false);
+    expect(mathOptionImageRows.length, 228);
+    for (final row in mathOptionImageRows) {
+      for (final key in [
+        'option_a_image',
+        'option_b_image',
+        'option_c_image',
+        'option_d_image',
+      ]) {
+        final path = '${row[key]}';
+        expect(
+          path,
+          startsWith(
+            'assets/images/aptitude/quantitative_reasoning/math_operations/options/',
+          ),
+        );
         expect(File(path).existsSync(), isTrue);
       }
     }
@@ -288,6 +378,11 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
+
+    final catalog = AptitudeCatalog.fromSeedTables(
+      loadSeedTablesFromFiles().map((key, value) => MapEntry(key, value)),
+    );
+    debugSetAptitudeCatalogForTesting(catalog);
 
     await tester.pumpWidget(const ShorePodApp());
     await tester.pumpAndSettle();
@@ -328,6 +423,13 @@ void main() {
     expect(find.text('行测练习'), findsOneWidget);
     expect(find.text('AI行测演练'), findsOneWidget);
     expect(find.text('开始演练'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, '选择行测'));
+    await tester.pumpAndSettle();
+    expect(find.text('行测练习模式'), findsOneWidget);
+    expect(find.text('刷题模式'), findsOneWidget);
+    expect(find.text('背题模式'), findsOneWidget);
+    await tester.tapAt(const Offset(20, 100));
+    await tester.pumpAndSettle();
 
     await tester.tap(
       find.byIcon(Icons.arrow_back_ios_new_rounded).hitTestable().first,
@@ -340,13 +442,12 @@ void main() {
     expect(find.text(syncedKnowledgeTopics.first.title), findsOneWidget);
     expect(find.text('知识卡片'), findsNothing);
     expect(find.textContaining('/'), findsWidgets);
-    expect(find.text('挖空'), findsOneWidget);
-
-    await tester.tap(find.text('挖空'));
+    expect(find.text('挖空'), findsNothing);
+    await tester.tap(
+      find.text(syncedKnowledgeTopics.first.segments.first.content).last,
+    );
     await tester.pumpAndSettle();
-
-    expect(find.text('挖空练习'), findsOneWidget);
-    expect(find.text('逐空比对'), findsNothing);
+    expect(find.text('挖空'), findsOneWidget);
   });
 
   testWidgets('opens aptitude categories and question deck', (tester) async {
@@ -373,23 +474,19 @@ void main() {
     await tester.pumpWidget(const ShorePodApp());
     await tester.pumpAndSettle();
 
-    final customPracticeButton = find.text('自定义刷题');
-    await tester.ensureVisible(customPracticeButton);
-    await tester.tap(customPracticeButton);
-    await pumpUntilFound(find.text('定义判断'));
-
+    expect(find.text('自定义刷题'), findsNothing);
     expect(find.text('判断推理'), findsWidgets);
-    expect(find.text('定义判断'), findsOneWidget);
-    expect(find.textContaining('0/1475'), findsWidgets);
+    final judgmentRow = find.widgetWithText(HomeAptitudeCategoryRow, '判断推理');
+    await tester.tap(
+      find.descendant(of: judgmentRow, matching: find.byType(IconButton)).first,
+    );
+    await pumpUntilFound(find.textContaining('太阳光与水平地面'));
 
-    await tester.tap(find.text('定义判断'));
-    await pumpUntilFound(find.textContaining('强制型顾客参与'));
-
-    expect(find.text('1/1475'), findsNothing);
+    expect(find.text('1/288'), findsNothing);
     expect(find.byIcon(Icons.more_horiz_rounded), findsOneWidget);
-    expect(find.textContaining('强制型顾客参与'), findsOneWidget);
+    expect(find.textContaining('太阳光与水平地面'), findsOneWidget);
 
-    final correctOption = find.textContaining('眼镜店工作人员');
+    final correctOption = find.textContaining('与水平方向成70');
     await tester.ensureVisible(correctOption);
     await tester.tap(correctOption);
     await pumpUntilFound(find.text('回答正确'));

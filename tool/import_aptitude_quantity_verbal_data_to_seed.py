@@ -36,6 +36,7 @@ class ImportConfig:
     answer_dir: Path
     source_name: str
     image_prefix: str = ""
+    attach_page_images: bool = False
     answer_slice_start: int | None = None
     answer_slice_end: int | None = None
 
@@ -73,7 +74,6 @@ CONFIGS = [
         question_pdf=QUESTION_ROOT / "数量/数学运算PDF326页.pdf",
         answer_dir=ANSWER_ROOT / "数量/数学运算",
         source_name="粉笔行测两万五-数学运算",
-        image_prefix="assets/images/aptitude/quantitative_reasoning/math_operations",
     ),
     ImportConfig(
         slug="number_reasoning",
@@ -83,6 +83,7 @@ CONFIGS = [
         answer_dir=ANSWER_ROOT / "数量/数字推理",
         source_name="粉笔行测两万五-数字推理",
         image_prefix="assets/images/aptitude/quantitative_reasoning/number_reasoning",
+        attach_page_images=True,
     ),
     ImportConfig(
         slug="logical_fill",
@@ -124,6 +125,7 @@ CONFIGS = [
         answer_dir=ANSWER_ROOT / "资料",
         source_name="粉笔行测两万五-资料分析",
         image_prefix="assets/images/aptitude/data_analysis/part_1",
+        attach_page_images=True,
         answer_slice_start=0,
         answer_slice_end=40,
     ),
@@ -135,6 +137,7 @@ CONFIGS = [
         answer_dir=ANSWER_ROOT / "资料",
         source_name="粉笔行测两万五-资料分析",
         image_prefix="assets/images/aptitude/data_analysis/part_2",
+        attach_page_images=True,
         answer_slice_start=40,
         answer_slice_end=None,
     ),
@@ -546,9 +549,8 @@ def build_rows(
         if answer.answer_key not in {"A", "B", "C", "D"}:
             continue
         global_number = number_offset + question.global_number
-        has_page_image = question.source_page in page_images
         options = {
-            label: question.options[label] if question.options[label] else (label if has_page_image else "")
+            label: question.options[label] if question.options[label] else label
             for label in "ABCD"
         }
         rows.append(
@@ -591,7 +593,7 @@ def main() -> None:
         questions = parse_question_pdf(config.question_pdf)
         offset = offsets.get(config.source_name, 0)
         answers = attach_answers(questions, config)
-        page_images = render_page_images(config)
+        page_images = render_page_images(config) if config.attach_page_images else {}
         rows = build_rows(
             config=config,
             questions=questions,

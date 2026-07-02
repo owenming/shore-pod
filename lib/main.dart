@@ -595,30 +595,9 @@ class _HomeAptitudePracticeSectionState
                     ),
                   ),
                 ),
-                const Spacer(),
-                TextButton.icon(
-                  onPressed: () => widget.onOpen(const AptitudeCategoryPage()),
-                  icon: const Icon(Icons.tune_rounded, size: 14),
-                  label: const Text('自定义刷题'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppColors.ink,
-                    backgroundColor: const Color(0xFFF5F6FA),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 9,
-                      vertical: 5,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    textStyle: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 9),
             for (final category in catalog.categories) ...[
               HomeAptitudeCategoryRow(
                 category: category,
@@ -722,7 +701,7 @@ class HomeAptitudeCategoryRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final showContinue = current;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 7),
       child: Row(
         children: [
           InkWell(
@@ -1738,7 +1717,7 @@ class _PracticeHubPageState extends State<PracticeHubPage> {
                       _showPracticeModeSheet();
                       return;
                     }
-                    widget.onOpen(const AptitudeCategoryPage());
+                    _showAptitudePracticeModeSheet(aptitudeQuestions);
                   },
                   onAiExamTap: () {
                     if (_subject == PracticeSubject.knowledge) {
@@ -1790,6 +1769,60 @@ class _PracticeHubPageState extends State<PracticeHubPage> {
           builder: (context, setDialogState) {
             return QuestionCountSheet(
               title: '练习模式',
+              subtitle: '选择题量后进入刷题或背题',
+              count: selectedCount.round(),
+              maxCount: maxCount,
+              value: selectedCount,
+              onChanged: (value) => setDialogState(() => selectedCount = value),
+              footer: QuestionModeActionRow(
+                onPractice: () => openPractice(memorizationMode: false),
+                onMemorize: () => openPractice(memorizationMode: true),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showAptitudePracticeModeSheet(
+    List<AptitudeQuestion> questions,
+  ) async {
+    final availableQuestions = questions.isNotEmpty
+        ? questions
+        : (await loadBundledAptitudeCatalog()).questions;
+    final availableCount = availableQuestions.length;
+    if (availableCount == 0) {
+      showToast(context, '暂无可练题目');
+      return;
+    }
+    final maxCount = math.min(100, availableCount);
+    var selectedCount = math.min(30, maxCount).toDouble();
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        void openPractice({required bool memorizationMode}) {
+          final selectedQuestions = availableQuestions.toList(growable: false)
+            ..shuffle(math.Random());
+          Navigator.of(sheetContext).pop();
+          widget.onOpen(
+            AptitudeQuestionDeckPage(
+              title: memorizationMode ? '行测背题模式' : '行测刷题模式',
+              questions: selectedQuestions
+                  .take(selectedCount.round())
+                  .toList(growable: false),
+              memorizationMode: memorizationMode,
+            ),
+          );
+        }
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return QuestionCountSheet(
+              title: '行测练习模式',
               subtitle: '选择题量后进入刷题或背题',
               count: selectedCount.round(),
               maxCount: maxCount,
@@ -3609,6 +3642,7 @@ class _KnowledgeCardDeckPageState extends State<KnowledgeCardDeckPage> {
   final _cardNoteFocusNode = FocusNode();
   var _showBack = false;
   String? _editingNoteSegmentId;
+  String? _activeClozeSegmentId;
 
   @override
   void initState() {
@@ -3678,6 +3712,7 @@ class _KnowledgeCardDeckPageState extends State<KnowledgeCardDeckPage> {
                         _page = index;
                         _showBack = false;
                         _editingNoteSegmentId = null;
+                        _activeClozeSegmentId = null;
                       });
                       _rememberCurrentTopic();
                       _cardNoteFocusNode.unfocus();
@@ -3690,7 +3725,30 @@ class _KnowledgeCardDeckPageState extends State<KnowledgeCardDeckPage> {
                         child: FlipKnowledgeCard(
                           segment: segment,
                           showBack: _showBack && index == _page,
-                          onTap: () => setState(() => _showBack = !_showBack),
+                          inlineCloze:
+                              _activeClozeSegmentId == segment.id &&
+                              _showBack &&
+                              index == _page,
+                          onTap:
+                              _activeClozeSegmentId == segment.id &&
+                                  _showBack &&
+                                  index == _page
+                              ? null
+                              : () => setState(() {
+                                  _showBack = !_showBack;
+                                  if (!_showBack) {
+                                    _activeClozeSegmentId = null;
+                                  }
+                                }),
+                          onToggleCloze: () => setState(() {
+                            if (_activeClozeSegmentId == segment.id &&
+                                _showBack) {
+                              _activeClozeSegmentId = null;
+                              return;
+                            }
+                            _showBack = true;
+                            _activeClozeSegmentId = segment.id;
+                          }),
                           menu: _buildMoreMenu(context, entry),
                         ),
                       );
@@ -3996,13 +4054,17 @@ class FlipKnowledgeCard extends StatelessWidget {
     super.key,
     required this.segment,
     required this.showBack,
+    required this.inlineCloze,
     required this.onTap,
+    required this.onToggleCloze,
     required this.menu,
   });
 
   final KnowledgeSegment segment;
   final bool showBack;
-  final VoidCallback onTap;
+  final bool inlineCloze;
+  final VoidCallback? onTap;
+  final VoidCallback onToggleCloze;
   final Widget menu;
 
   @override
@@ -4025,7 +4087,9 @@ class FlipKnowledgeCard extends StatelessWidget {
           segment: segment,
           questions: segmentQuestions,
           showBack: showingBack,
+          inlineCloze: inlineCloze && showingBack,
           onTap: onTap,
+          onToggleCloze: onToggleCloze,
           menu: menu,
         );
 
@@ -4050,14 +4114,18 @@ class _FlipKnowledgeCardFace extends StatelessWidget {
     required this.segment,
     required this.questions,
     required this.showBack,
+    required this.inlineCloze,
     required this.onTap,
+    required this.onToggleCloze,
     required this.menu,
   });
 
   final KnowledgeSegment segment;
   final List<PracticeQuestion> questions;
   final bool showBack;
-  final VoidCallback onTap;
+  final bool inlineCloze;
+  final VoidCallback? onTap;
+  final VoidCallback onToggleCloze;
   final Widget menu;
 
   @override
@@ -4105,29 +4173,26 @@ class _FlipKnowledgeCardFace extends StatelessWidget {
                   ),
                   child: const Text('关联题目'),
                 ),
-                const SizedBox(width: 10),
-                TextButton(
-                  onPressed: clozeExercise.blanks.isEmpty
-                      ? null
-                      : () => Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) =>
-                                ClozePracticePage(exercise: clozeExercise),
-                          ),
-                        ),
-                  style: TextButton.styleFrom(
-                    padding: EdgeInsets.zero,
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    foregroundColor: AppColors.accent,
-                    disabledForegroundColor: AppColors.activeSubtle,
-                    textStyle: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
+                if (showBack) ...[
+                  const SizedBox(width: 10),
+                  TextButton(
+                    onPressed: clozeExercise.blanks.isEmpty
+                        ? null
+                        : onToggleCloze,
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      foregroundColor: AppColors.accent,
+                      disabledForegroundColor: AppColors.activeSubtle,
+                      textStyle: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
+                    child: Text(inlineCloze ? '原文' : '挖空'),
                   ),
-                  child: const Text('挖空'),
-                ),
+                ],
                 const Spacer(),
                 menu,
               ],
@@ -4143,18 +4208,22 @@ class _FlipKnowledgeCardFace extends StatelessWidget {
                       ),
                       child: Align(
                         alignment: Alignment.center,
-                        child: Text(
-                          showBack ? segment.details : segment.content,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: showBack ? 17 : 30,
-                            fontWeight: showBack
-                                ? FontWeight.w600
-                                : FontWeight.w600,
-                            height: showBack ? 1.68 : 1.28,
-                            color: AppColors.activeInk,
-                          ),
-                        ),
+                        child: inlineCloze
+                            ? InlineClozePractice(exercise: clozeExercise)
+                            : Text(
+                                showBack
+                                    ? knowledgeSegmentDisplayDetails(segment)
+                                    : segment.content,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: showBack ? 17 : 30,
+                                  fontWeight: showBack
+                                      ? FontWeight.w600
+                                      : FontWeight.w600,
+                                  height: showBack ? 1.68 : 1.28,
+                                  color: AppColors.activeInk,
+                                ),
+                              ),
                       ),
                     ),
                   );
@@ -4166,6 +4235,18 @@ class _FlipKnowledgeCardFace extends StatelessWidget {
       ),
     );
   }
+}
+
+String knowledgeSegmentDisplayDetails(KnowledgeSegment segment) {
+  final details = segment.details.trim();
+  final title = segment.content.trim();
+  if (details.isEmpty || title.isEmpty) {
+    return details;
+  }
+
+  final titlePrefix = RegExp('^${RegExp.escape(title)}的核心考点[：:]\\s*');
+  final genericPrefix = RegExp(r'^[^\n：:]{1,40}的核心考点[：:]\s*');
+  return details.replaceFirst(titlePrefix, '').replaceFirst(genericPrefix, '');
 }
 
 class ClozeExercise {
@@ -4185,12 +4266,18 @@ class ClozeExercise {
           ? segment.content
           : '${segment.content}\n${segment.details}',
     );
-    final candidates = _buildCandidates(source);
-    final blanks = _selectBlanks(source, candidates);
+    final storedBlanks = _storedBlanks(source, segment.clozeBlanks);
+    if (storedBlanks.isNotEmpty) {
+      return ClozeExercise(
+        title: segment.content,
+        source: source,
+        blanks: storedBlanks,
+      );
+    }
     return ClozeExercise(
       title: segment.content,
       source: source,
-      blanks: blanks,
+      blanks: const [],
     );
   }
 
@@ -4200,6 +4287,45 @@ class ClozeExercise {
         .replaceAll(RegExp(r'[ \t]+'), ' ')
         .replaceAll(RegExp(r'\n{3,}'), '\n\n')
         .trim();
+  }
+
+  static List<ClozeBlank> _storedBlanks(
+    String source,
+    List<KnowledgeClozeBlank> stored,
+  ) {
+    final valid = <KnowledgeClozeBlank>[];
+    final seenAnswers = <String>{};
+    for (final blank in stored) {
+      if (blank.start < 0 ||
+          blank.end <= blank.start ||
+          blank.end > source.length ||
+          blank.answer.isEmpty) {
+        continue;
+      }
+      final answerInSource = source.substring(blank.start, blank.end);
+      if (answerInSource != blank.answer) {
+        continue;
+      }
+      final normalized = normalizeClozeAnswer(blank.answer);
+      if (seenAnswers.contains(normalized)) {
+        continue;
+      }
+      valid.add(blank);
+      seenAnswers.add(normalized);
+      if (valid.length >= 5) {
+        break;
+      }
+    }
+    return [
+      for (var i = 0; i < valid.length; i++)
+        ClozeBlank(
+          index: i + 1,
+          start: valid[i].start,
+          end: valid[i].end,
+          answer: valid[i].answer,
+          hint: valid[i].hint,
+        ),
+    ];
   }
 
   static List<_ClozeCandidate> _buildCandidates(String source) {
@@ -4533,6 +4659,124 @@ class _ClozePracticePageState extends State<ClozePracticePage> {
   }
 }
 
+class InlineClozePractice extends StatefulWidget {
+  const InlineClozePractice({super.key, required this.exercise});
+
+  final ClozeExercise exercise;
+
+  @override
+  State<InlineClozePractice> createState() => _InlineClozePracticeState();
+}
+
+class _InlineClozePracticeState extends State<InlineClozePractice> {
+  var _controllers = <TextEditingController>[];
+  Map<int, ClozeCompareResult>? _results;
+
+  @override
+  void initState() {
+    super.initState();
+    _resetControllers();
+  }
+
+  @override
+  void didUpdateWidget(covariant InlineClozePractice oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.exercise.source != widget.exercise.source) {
+      _disposeControllers();
+      _results = null;
+      _resetControllers();
+    }
+  }
+
+  @override
+  void dispose() {
+    _disposeControllers();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final results = _results;
+    final correctCount =
+        results?.values.where((result) => result.correct).length ?? 0;
+    final partialCount =
+        results?.values.where((result) => result.partial).length ?? 0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _ClozePassage(exercise: widget.exercise, results: results),
+        const SizedBox(height: 14),
+        for (var i = 0; i < widget.exercise.blanks.length; i++) ...[
+          _ClozeAnswerField(
+            blank: widget.exercise.blanks[i],
+            controller: _controllers[i],
+            result: results?[widget.exercise.blanks[i].index],
+            onChanged: (_) {
+              if (_results != null) {
+                setState(() => _results = null);
+              }
+            },
+          ),
+          const SizedBox(height: 8),
+        ],
+        FilledButton.icon(
+          onPressed: _submit,
+          icon: const Icon(Icons.fact_check_rounded),
+          label: const Text('比对答案'),
+        ),
+        if (results != null) ...[
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: _resetAnswers,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('重新填写'),
+          ),
+          const SizedBox(height: 14),
+          _ClozeReviewPanel(
+            blanks: widget.exercise.blanks,
+            results: results,
+            correctCount: correctCount,
+            partialCount: partialCount,
+          ),
+        ],
+      ],
+    );
+  }
+
+  void _resetControllers() {
+    _controllers = [
+      for (final _ in widget.exercise.blanks) TextEditingController(),
+    ];
+  }
+
+  void _disposeControllers() {
+    for (final controller in _controllers) {
+      controller.dispose();
+    }
+  }
+
+  void _submit() {
+    playAnswerFeedback();
+    final nextResults = <int, ClozeCompareResult>{};
+    for (var i = 0; i < widget.exercise.blanks.length; i++) {
+      final blank = widget.exercise.blanks[i];
+      nextResults[blank.index] = compareClozeAnswer(
+        _controllers[i].text,
+        blank.answer,
+      );
+    }
+    setState(() => _results = nextResults);
+  }
+
+  void _resetAnswers() {
+    for (final controller in _controllers) {
+      controller.clear();
+    }
+    setState(() => _results = null);
+  }
+}
+
 class _ClozePassage extends StatelessWidget {
   const _ClozePassage({required this.exercise, required this.results});
 
@@ -4637,8 +4881,6 @@ class _ClozeAnswerField extends StatelessWidget {
           horizontal: 14,
           vertical: 10,
         ),
-        labelText: '空 ${blank.index} · ${blank.hint}',
-        hintText: '填写核心内容',
         suffixIconConstraints: const BoxConstraints(
           minWidth: 40,
           minHeight: 40,
@@ -6574,6 +6816,9 @@ class AptitudeOption {
   bool get hasImage => imagePath.isNotEmpty;
 
   String get displayText {
+    if (text == label) {
+      return '';
+    }
     if (hasImage && text.startsWith('图片选项')) {
       return '';
     }
@@ -6891,10 +7136,12 @@ class AptitudeQuestionDeckPage extends StatefulWidget {
     super.key,
     required this.title,
     required this.questions,
+    this.memorizationMode = false,
   });
 
   final String title;
   final List<AptitudeQuestion> questions;
+  final bool memorizationMode;
 
   @override
   State<AptitudeQuestionDeckPage> createState() =>
@@ -6954,6 +7201,7 @@ class _AptitudeQuestionDeckPageState extends State<AptitudeQuestionDeckPage> {
                 return _AptitudeQuestionContent(
                   question: question,
                   selected: _answers[question.id],
+                  memorizationMode: widget.memorizationMode,
                   onSelect: (answer) {
                     playAnswerFeedback();
                     setState(() => _answers[question.id] = answer);
@@ -7110,16 +7358,18 @@ class _AptitudeQuestionContent extends StatelessWidget {
   const _AptitudeQuestionContent({
     required this.question,
     required this.selected,
+    required this.memorizationMode,
     required this.onSelect,
   });
 
   final AptitudeQuestion question;
   final String? selected;
+  final bool memorizationMode;
   final ValueChanged<String> onSelect;
 
   @override
   Widget build(BuildContext context) {
-    final reveal = selected != null;
+    final reveal = memorizationMode || selected != null;
     final correct = selected == question.answerKey;
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
@@ -7175,14 +7425,20 @@ class _AptitudeQuestionContent extends StatelessWidget {
                   reveal &&
                   selected == option.label &&
                   selected != question.answerKey,
-              onTap: reveal ? null : () => onSelect(option.label),
+              onTap: reveal || memorizationMode
+                  ? null
+                  : () => onSelect(option.label),
             ),
             const SizedBox(height: 10),
           ],
           if (reveal) ...[
             const SizedBox(height: 8),
             LabelBlock(
-              label: correct ? '回答正确' : '解析',
+              label: memorizationMode
+                  ? '答案解析'
+                  : correct
+                  ? '回答正确'
+                  : '解析',
               body: '正确答案：${question.answerKey}\n${question.explanation}',
             ),
             if (question.sourceName.isNotEmpty) ...[
@@ -8769,7 +9025,7 @@ class KnowledgeSegmentSwipeCard extends StatelessWidget {
             Expanded(
               child: SingleChildScrollView(
                 child: Text(
-                  segment.details,
+                  knowledgeSegmentDisplayDetails(segment),
                   style: TextStyle(
                     color: AppColors.activeInk,
                     height: 1.62,
@@ -9886,34 +10142,37 @@ class AppScaffold extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(
-                    child:
-                        titleWidget ??
-                        Row(
-                          children: [
-                            if (titleLeading != null) ...[
-                              titleLeading!,
-                              const SizedBox(width: 10),
-                            ],
-                            Expanded(
-                              child: Text(
-                                title,
-                                style: TextStyle(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.activeInk,
-                                  height: 1.1,
+              SizedBox(
+                height: 48,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child:
+                          titleWidget ??
+                          Row(
+                            children: [
+                              if (titleLeading != null) ...[
+                                titleLeading!,
+                                const SizedBox(width: 10),
+                              ],
+                              Expanded(
+                                child: Text(
+                                  title,
+                                  style: TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.activeInk,
+                                    height: 1.1,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                  ),
-                  ?trailing,
-                ],
+                            ],
+                          ),
+                    ),
+                    ?trailing,
+                  ],
+                ),
               ),
               const SizedBox(height: 16),
               Expanded(
