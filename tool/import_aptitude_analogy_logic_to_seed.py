@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
+from split_seed_io import load_seed, save_seed
+
 from pypdf import PdfReader
 
 
@@ -484,7 +486,7 @@ def main() -> None:
         id_prefix="logic",
     )
 
-    data = json.loads(SEED_PATH.read_text())
+    data = load_seed(SEED_PATH)
     tables = data["tables"]
     existing = [
         row
@@ -492,7 +494,7 @@ def main() -> None:
         if row.get("source_name") not in {ANALOGY_SOURCE_NAME, LOGIC_SOURCE_NAME}
     ]
     tables["aptitude_question"] = existing + analogy_rows + logic_rows
-    SEED_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+    save_seed(data, SEED_PATH)
 
     print(f"Imported analogy questions: {len(analogy_rows)}")
     print(f"Imported logic questions: {len(logic_rows)}")

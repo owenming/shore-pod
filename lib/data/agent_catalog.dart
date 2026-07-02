@@ -1,9 +1,7 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import 'agent_chinese_basic_seed.dart';
+import 'bundled_seed_loader.dart';
 
 enum SegmentStatus { notStarted, learned, mastered, weak }
 
@@ -688,15 +686,16 @@ List<KnowledgeTopic> syncedKnowledgeTopics = _buildSyncedKnowledgeTopics();
 
 Future<void> loadBundledKnowledgeSeed() async {
   try {
-    final raw = await rootBundle.loadString('assets/data/shore_pod_seed.json');
-    final seed = jsonDecode(raw) as Map<String, Object?>;
-    final tables = (seed['tables'] as Map).cast<String, Object?>();
-    applyKnowledgeTables({
-      'basic_knowledge_category': _rows(tables['basic_knowledge_category']),
-      'basic_knowledge_info': _rows(tables['basic_knowledge_info']),
-      'basic_knowledge_segment': _rows(tables['basic_knowledge_segment']),
-      'basic_knowledge_question': _rows(tables['basic_knowledge_question']),
-    });
+    applyKnowledgeTables(
+      await loadBundledSeedTables(
+        tableNames: const [
+          'basic_knowledge_category',
+          'basic_knowledge_info',
+          'basic_knowledge_segment',
+          'basic_knowledge_question',
+        ],
+      ),
+    );
   } catch (_) {
     resetKnowledgeToFallback();
   }
@@ -810,16 +809,6 @@ void resetKnowledgeToFallback() {
   syncedKnowledgeCategories = _buildSyncedKnowledgeCategories();
   syncedKnowledgeTopics = _buildSyncedKnowledgeTopics();
   practiceQuestions = _fallbackPracticeQuestions;
-}
-
-List<Map<String, Object?>> _rows(Object? value) {
-  if (value is! List) {
-    return const [];
-  }
-  return value
-      .whereType<Map>()
-      .map((row) => row.cast<String, Object?>())
-      .toList(growable: false);
 }
 
 String _string(Object? value, {String fallback = ''}) {

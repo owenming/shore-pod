@@ -6,11 +6,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shore_pod/data/agent_catalog.dart';
 import 'package:shore_pod/main.dart';
 
+Map<String, Object?> loadSeedTablesFromFiles() {
+  final raw = File('assets/data/shore_pod_seed.json').readAsStringSync();
+  final decoded = jsonDecode(raw) as Map<String, Object?>;
+  final tables = decoded['tables'] as Map<String, Object?>;
+  return {
+    for (final entry in tables.entries)
+      entry.key: entry.value is String
+          ? jsonDecode(File('${entry.value}').readAsStringSync())
+          : entry.value,
+  };
+}
+
 void main() {
   test('bundled seed contains aptitude category hierarchy', () {
-    final raw = File('assets/data/shore_pod_seed.json').readAsStringSync();
-    final decoded = jsonDecode(raw) as Map<String, Object?>;
-    final tables = decoded['tables'] as Map<String, Object?>;
+    final tables = loadSeedTablesFromFiles();
     final categoryRows = (tables['aptitude_category'] as List).cast<Map>();
     final subcategoryRows = (tables['aptitude_subcategory'] as List)
         .cast<Map>();
@@ -351,10 +361,8 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final raw = File('assets/data/shore_pod_seed.json').readAsStringSync();
-    final decoded = jsonDecode(raw) as Map<String, Object?>;
     final catalog = AptitudeCatalog.fromSeedTables(
-      (decoded['tables'] as Map).map((key, value) => MapEntry('$key', value)),
+      loadSeedTablesFromFiles().map((key, value) => MapEntry(key, value)),
     );
     debugSetAptitudeCatalogForTesting(catalog);
     expect(
@@ -401,10 +409,8 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final raw = File('assets/data/shore_pod_seed.json').readAsStringSync();
-    final decoded = jsonDecode(raw) as Map<String, Object?>;
     final catalog = AptitudeCatalog.fromSeedTables(
-      (decoded['tables'] as Map).map((key, value) => MapEntry('$key', value)),
+      loadSeedTablesFromFiles().map((key, value) => MapEntry(key, value)),
     );
     debugSetAptitudeCatalogForTesting(catalog);
 
@@ -436,10 +442,8 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final raw = File('assets/data/shore_pod_seed.json').readAsStringSync();
-    final decoded = jsonDecode(raw) as Map<String, Object?>;
     final catalog = AptitudeCatalog.fromSeedTables(
-      (decoded['tables'] as Map).map((key, value) => MapEntry('$key', value)),
+      loadSeedTablesFromFiles().map((key, value) => MapEntry(key, value)),
     );
     debugSetAptitudeCatalogForTesting(catalog);
     await appSettingsController.update(

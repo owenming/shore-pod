@@ -6,6 +6,8 @@ import tempfile
 from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
+from split_seed_io import load_seed, save_seed
+
 import pdfplumber
 from PIL import Image, ImageChops, ImageDraw
 from pypdf import PdfReader
@@ -445,7 +447,7 @@ def extract_question_rows(
 
 
 def main() -> None:
-    seed = json.loads(SEED_PATH.read_text(encoding="utf-8"))
+    seed = load_seed(SEED_PATH)
     tables = seed.setdefault("tables", {})
     categories = tables.get("aptitude_category", [])
     subcategories = tables.get("aptitude_subcategory", [])
@@ -482,10 +484,7 @@ def main() -> None:
     ]
     rows.sort(key=lambda row: row["question_number"])
     tables["aptitude_question"] = existing + rows
-    SEED_PATH.write_text(
-        json.dumps(seed, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    save_seed(seed, SEED_PATH)
     print(f"imported {len(rows)} science reasoning questions into {SEED_PATH}")
     print("first:", rows[0]["question_text"][:80], rows[0]["answer_key"])
     print("last:", rows[-1]["question_number"], rows[-1]["answer_key"])

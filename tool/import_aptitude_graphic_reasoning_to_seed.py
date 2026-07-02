@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
+from split_seed_io import load_seed, save_seed
+
 import pdfplumber
 from PIL import Image, ImageChops
 from pypdf import PdfReader
@@ -503,7 +505,7 @@ def main() -> None:
             all_rows.extend(rows)
             print(f"{config.label}: {len(rows)}")
 
-    data = json.loads(SEED_PATH.read_text())
+    data = load_seed(SEED_PATH)
     tables = data["tables"]
     existing = [
         row
@@ -511,7 +513,7 @@ def main() -> None:
         if row.get("source_name") != SOURCE_NAME
     ]
     tables["aptitude_question"] = existing + all_rows
-    SEED_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+    save_seed(data, SEED_PATH)
 
     print(f"Imported graphic reasoning questions: {len(all_rows)}")
     print(f"Total aptitude questions: {len(tables['aptitude_question'])}")

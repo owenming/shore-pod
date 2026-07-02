@@ -1,6 +1,4 @@
-import 'dart:convert';
-
-import 'package:flutter/services.dart';
+import 'bundled_seed_loader.dart';
 
 class LocalSqliteStore {
   LocalSqliteStore._();
@@ -24,29 +22,16 @@ class LocalSqliteStore {
   Future<Map<String, List<Map<String, Object?>>>>
   aptitudeCatalogTables() async {
     try {
-      final raw = await rootBundle.loadString(
-        'assets/data/shore_pod_seed.json',
+      return await loadBundledSeedTables(
+        tableNames: const [
+          'aptitude_category',
+          'aptitude_subcategory',
+          'aptitude_question',
+        ],
       );
-      final decoded = jsonDecode(raw) as Map<String, Object?>;
-      final tables = decoded['tables'] as Map<String, Object?>;
-      return {
-        'aptitude_category': _tableRows(tables['aptitude_category']),
-        'aptitude_subcategory': _tableRows(tables['aptitude_subcategory']),
-        'aptitude_question': _tableRows(tables['aptitude_question']),
-      };
     } catch (_) {
       return const {};
     }
-  }
-
-  List<Map<String, Object?>> _tableRows(Object? value) {
-    if (value is! List) {
-      return const <Map<String, Object?>>[];
-    }
-    return value
-        .whereType<Map>()
-        .map((row) => Map<String, Object?>.from(row))
-        .toList(growable: false);
   }
 
   Future<Map<String, String>> cardNotesForTopic(String topicId) async {

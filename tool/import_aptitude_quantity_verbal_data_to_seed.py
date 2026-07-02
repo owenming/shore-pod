@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
+from split_seed_io import load_seed, save_seed
+
 from PIL import Image, ImageChops
 from pypdf import PdfReader
 
@@ -517,7 +519,7 @@ def render_page_images(config: ImportConfig) -> dict[int, str]:
 
 
 def load_seed_tables() -> tuple[dict, dict[str, str], dict[tuple[str, str], str]]:
-    data = json.loads(SEED_PATH.read_text(encoding="utf-8"))
+    data = load_seed(SEED_PATH)
     tables = data["tables"]
     category_ids = {row["category_title"]: row["id"] for row in tables["aptitude_category"]}
     subcategory_ids = {
@@ -610,7 +612,7 @@ def main() -> None:
         if row.get("source_name") not in source_names
     ]
     tables["aptitude_question"] = existing + imported_rows
-    SEED_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    save_seed(data, SEED_PATH)
     print(f"Imported quantity/verbal/data questions: {len(imported_rows)}")
     print(f"Total aptitude questions: {len(tables['aptitude_question'])}")
 

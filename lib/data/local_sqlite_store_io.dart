@@ -1,17 +1,14 @@
-import 'dart:convert';
-
-import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite/sqflite.dart';
 
 import 'agent_chinese_basic_seed.dart';
 import 'agent_catalog.dart';
+import 'bundled_seed_loader.dart';
 
 class LocalSqliteStore {
   LocalSqliteStore._();
 
   static final LocalSqliteStore instance = LocalSqliteStore._();
-  static const _bundledSeedAsset = 'assets/data/shore_pod_seed.json';
   static const _localUserId = 'local';
   static const _currentUserSettingKey = 'current_user_id';
 
@@ -1313,27 +1310,7 @@ class LocalSqliteStore {
   Future<Map<String, List<Map<String, Object?>>>>
   _loadBundledSeedTables() async {
     try {
-      final raw = await rootBundle.loadString(_bundledSeedAsset);
-      final decoded = jsonDecode(raw) as Map<String, Object?>;
-      final tables = decoded['tables'] as Map<String, Object?>;
-      return {
-        'basic_knowledge_category': _tableRows(
-          tables['basic_knowledge_category'],
-        ),
-        'basic_knowledge_info': _tableRows(tables['basic_knowledge_info']),
-        'basic_knowledge_segment': _tableRows(
-          tables['basic_knowledge_segment'],
-        ),
-        'basic_knowledge_question': _tableRows(
-          tables['basic_knowledge_question'],
-        ),
-        'basic_current_politics_info': _tableRows(
-          tables['basic_current_politics_info'],
-        ),
-        'aptitude_category': _tableRows(tables['aptitude_category']),
-        'aptitude_subcategory': _tableRows(tables['aptitude_subcategory']),
-        'aptitude_question': _tableRows(tables['aptitude_question']),
-      };
+      return await loadBundledSeedTables();
     } catch (_) {
       return {
         'basic_knowledge_category': agentChineseBasicKnowledgeCategories,
@@ -1346,16 +1323,6 @@ class LocalSqliteStore {
         'aptitude_question': const <Map<String, Object?>>[],
       };
     }
-  }
-
-  List<Map<String, Object?>> _tableRows(Object? value) {
-    if (value is! List) {
-      return const <Map<String, Object?>>[];
-    }
-    return value
-        .whereType<Map>()
-        .map((row) => Map<String, Object?>.from(row))
-        .toList(growable: false);
   }
 
   Future<void> _removePrototypeSeeds(Database db) async {

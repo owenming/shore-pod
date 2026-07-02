@@ -62,6 +62,7 @@ flutter:
 
   assets:
     - assets/data/shore_pod_seed.json
+    - assets/data/seed/tables/
     - assets/images/app_icon.png
     - assets/images/aptitude/definition_judgment/
     - assets/images/aptitude/science_reasoning/
